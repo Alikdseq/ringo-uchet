@@ -1,0 +1,89 @@
+# Правила алертов для системных метрик
+
+groups:
+  - name: system_alerts
+    interval: 30s
+    rules:
+      # Алерт на высокое использование CPU
+      - alert: HighCPUUsage
+        expr: |
+          100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+          component: system
+        annotations:
+          summary: "Высокое использование CPU"
+          description: "Использование CPU на {{ $labels.instance }} превышает 80%. Текущее значение: {{ $value }}%"
+
+      # Алерт на критическое использование CPU
+      - alert: CriticalCPUUsage
+        expr: |
+          100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 95
+        for: 2m
+        labels:
+          severity: critical
+          component: system
+        annotations:
+          summary: "Критическое использование CPU"
+          description: "Использование CPU на {{ $labels.instance }} превышает 95%. Текущее значение: {{ $value }}%"
+
+      # Алерт на высокое использование памяти
+      - alert: HighMemoryUsage
+        expr: |
+          (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+          component: system
+        annotations:
+          summary: "Высокое использование памяти"
+          description: "Использование памяти на {{ $labels.instance }} превышает 85%. Текущее значение: {{ $value }}%"
+
+      # Алерт на критическое использование памяти
+      - alert: CriticalMemoryUsage
+        expr: |
+          (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 95
+        for: 2m
+        labels:
+          severity: critical
+          component: system
+        annotations:
+          summary: "Критическое использование памяти"
+          description: "Использование памяти на {{ $labels.instance }} превышает 95%. Текущее значение: {{ $value }}%"
+
+      # Алерт на высокое использование диска
+      - alert: HighDiskUsage
+        expr: |
+          (1 - (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"})) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+          component: system
+        annotations:
+          summary: "Высокое использование диска"
+          description: "Использование диска на {{ $labels.instance }} превышает 85%. Текущее значение: {{ $value }}%"
+
+      # Алерт на критическое использование диска
+      - alert: CriticalDiskUsage
+        expr: |
+          (1 - (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"})) * 100 > 95
+        for: 2m
+        labels:
+          severity: critical
+          component: system
+        annotations:
+          summary: "Критическое использование диска"
+          description: "Использование диска на {{ $labels.instance }} превышает 95%. Текущее значение: {{ $value }}%"
+
+      # Алерт на недоступность сервера
+      - alert: ServerDown
+        expr: up{job="node"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: system
+        annotations:
+          summary: "Сервер недоступен"
+          description: "Сервер {{ $labels.instance }} недоступен более 2 минут"
+

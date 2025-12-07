@@ -1,0 +1,50 @@
+name: Mobile Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'mobile/**'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'mobile/**'
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: 'stable'
+          cache: true
+      
+      - name: Install dependencies
+        working-directory: mobile
+        run: flutter pub get
+      
+      - name: Run unit tests
+        working-directory: mobile
+        run: flutter test test/unit --coverage
+      
+      - name: Run widget tests
+        working-directory: mobile
+        run: flutter test test/widget --coverage
+      
+      - name: Generate coverage report
+        working-directory: mobile
+        run: |
+          lcov --summary coverage/lcov.info
+      
+      - name: Upload coverage
+        uses: codecov/codecov-action@v3
+        with:
+          file: mobile/coverage/lcov.info
+          flags: mobile
+          name: mobile-coverage
+

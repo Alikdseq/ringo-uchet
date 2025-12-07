@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }}</title>
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: #2c3e50; color: white; padding: 20px; text-align: center; }
+        .content { background: #f9f9f9; padding: 20px; margin: 20px 0; }
+        .footer { text-align: center; color: #666; font-size: 12px; margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Ringo Uchet</h1>
+        </div>
+        <div class="content">
+            <h2>{{ title }}</h2>
+            <p>{{ body|safe }}</p>
+            {% if data %}
+                <p><small>Дополнительная информация: {{ data }}</small></p>
+            {% endif %}
+        </div>
+        <div class="footer">
+            <p>Это автоматическое уведомление от системы Ringo Uchet.</p>
+        </div>
+    </div>
+</body>
+</html>
+

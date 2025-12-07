@@ -1,0 +1,65 @@
+# Правила алертов для базы данных
+
+groups:
+  - name: database_alerts
+    interval: 30s
+    rules:
+      # Алерт на большое количество активных подключений
+      - alert: HighDatabaseConnections
+        expr: db_connections_active > 80
+        for: 5m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "Высокое количество подключений к БД"
+          description: "Количество активных подключений к базе данных превышает 80. Текущее значение: {{ $value }}"
+
+      # Алерт на критическое количество подключений
+      - alert: CriticalDatabaseConnections
+        expr: db_connections_active > 95
+        for: 2m
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: "Критическое количество подключений к БД"
+          description: "Количество активных подключений к базе данных превышает 95. Текущее значение: {{ $value }}"
+
+      # Алерт на медленные запросы
+      - alert: SlowDatabaseQueries
+        expr: |
+          histogram_quantile(0.95, 
+            rate(db_query_duration_seconds_bucket[5m])
+          ) > 1.0
+        for: 5m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "Медленные запросы к БД"
+          description: "95-й перцентиль длительности запросов {{ $labels.operation }} превышает 1 секунду. Текущее значение: {{ $value }}s"
+
+      # Алерт на недоступность БД
+      - alert: DatabaseDown
+        expr: up{job="postgres"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: "База данных недоступна"
+          description: "PostgreSQL сервер недоступен более 1 минуты"
+
+      # Алерт на использование дискового пространства БД
+      - alert: HighDatabaseDiskUsage
+        expr: |
+          (pg_database_size_bytes / pg_database_size_max_bytes) > 0.85
+        for: 5m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "Высокое использование дискового пространства БД"
+          description: "Использование дискового пространства БД превышает 85%. Текущее значение: {{ $value | humanizePercentage }}"
+

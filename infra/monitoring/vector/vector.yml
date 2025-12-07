@@ -1,0 +1,100 @@
+# Vector конфигурация для сбора и обработки логов
+
+data_dir: /var/lib/vector
+
+# Источники логов
+sources:
+  # Docker контейнеры
+  docker_logs:
+    type: docker_logs
+    include_containers: ["ringo-api", "ringo-worker", "ringo-celery"]
+    exclude_containers: []
+  
+  # Системные логи
+  syslog:
+    type: syslog
+    mode: tcp
+    address: 0.0.0.0:514
+
+# Трансформации (обработка логов)
+transforms:
+  # Парсинг JSON логов
+  parse_json:
+    type: remap
+    inputs:
+      - docker_logs
+    source: |
+      . = parse_json!(.message) ?? .
+  
+  # Добавление метаданных
+  add_metadata:
+    type: remap
+    inputs:
+      - parse_json
+    source: |
+      .timestamp = now()
+      .host = get_env_var!("HOSTNAME")
+      .service = "ringo-backend"
+  
+  # Фильтрация чувствительных данных
+  scrub_pii:
+    type: remap
+    inputs:
+      - add_metadata
+    source: |
+      # Удаляем пароли и токены из логов
+      if exists(.password) {
+        .password = "[REDACTED]"
+      }
+      if exists(.token) {
+        .token = "[REDACTED]"
+      }
+      if exists(.secret) {
+        .secret = "[REDACTED]"
+      }
+  
+  # Роутинг по уровню логов
+  route_logs:
+    type: route
+    inputs:
+      - scrub_pii
+    route:
+      errors: .level == "ERROR" || .level == "CRITICAL"
+      warnings: .level == "WARNING"
+      info: .level == "INFO" || .level == "DEBUG"
+
+# Назначения (куда отправлять логи)
+sinks:
+  # OpenSearch для долгосрочного хранения
+  opensearch:
+    type: elasticsearch
+    inputs:
+      - route_logs.errors
+      - route_logs.warnings
+      - route_logs.info
+    endpoint: http://opensearch:9200
+    index: ringo-logs-%Y.%m.%d
+    compression: gzip
+    bulk:
+      action: create
+    # Retention policy через index lifecycle management в OpenSearch
+    # Логи хранятся 90 дней, затем удаляются
+  
+  # S3 для архивного хранения (опционально)
+  s3_archive:
+    type: aws_s3
+    inputs:
+      - route_logs.errors
+    bucket: ringo-logs-archive
+    key_prefix: logs/
+    compression: gzip
+    encoding:
+      codec: json
+    # Retention: логи в S3 хранятся бессрочно (можно настроить lifecycle policy)
+
+# Метрики Vector
+api:
+  enabled: true
+  address: 0.0.0.0:8686
+  playground: true
+

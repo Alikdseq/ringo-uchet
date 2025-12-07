@@ -1,0 +1,84 @@
+name: Backend CI
+
+on:
+  push:
+    branches: ["main", "develop"]
+    paths:
+      - "backend/**"
+      - "docker-compose.yml"
+      - "Makefile"
+      - ".github/workflows/backend-ci.yml"
+  pull_request:
+    paths:
+      - "backend/**"
+      - "docker-compose.yml"
+      - "Makefile"
+
+jobs:
+  lint-test:
+    if: ${{ hashFiles('backend/requirements.txt') != '' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt black isort flake8 mypy coverage
+
+      - name: Run black
+        working-directory: backend
+        run: black --check .
+
+      - name: Run isort
+        working-directory: backend
+        run: isort --check-only .
+
+      - name: Run flake8
+        working-directory: backend
+        run: flake8 .
+
+      - name: Run mypy
+        working-directory: backend
+        run: mypy .
+
+      - name: Run tests with coverage
+        working-directory: backend
+        env:
+          DJANGO_SETTINGS_MODULE: ringo_backend.settings.local
+        run: |
+          coverage run manage.py test
+          coverage xml
+
+      - name: Generate OpenAPI schema
+        working-directory: backend
+        env:
+          DJANGO_SETTINGS_MODULE: ringo_backend.settings.local
+        run: python manage.py spectacular --file schema.yaml
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-artifacts
+          path: |
+            backend/coverage.xml
+            backend/schema.yaml
+
+  docker-build:
+    needs: lint-test
+    if: ${{ hashFiles('backend/Dockerfile') != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build backend image
+        run: docker build -f backend/Dockerfile backend --tag ringo-backend-ci:latest
+

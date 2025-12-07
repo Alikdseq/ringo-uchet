@@ -1,0 +1,73 @@
+{
+  "dashboard": {
+    "title": "Ringo Uchet - Celery Metrics",
+    "tags": ["ringo", "celery", "workers"],
+    "timezone": "browser",
+    "schemaVersion": 38,
+    "version": 1,
+    "refresh": "10s",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Queue Depth",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "celery_queue_length",
+            "legendFormat": "{{queue_name}}"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
+      },
+      {
+        "id": 2,
+        "title": "Task Rate",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(celery_tasks_total[5m])",
+            "legendFormat": "{{task_name}} - {{status}}"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
+      },
+      {
+        "id": 3,
+        "title": "Task Duration (95th percentile)",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(celery_task_duration_seconds_bucket[5m]))",
+            "legendFormat": "{{task_name}}"
+          }
+        ],
+        "yaxes": [
+          {"format": "s", "label": "Duration"},
+          {"format": "short"}
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8}
+      },
+      {
+        "id": 4,
+        "title": "Task Success/Failure Rate",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(celery_tasks_total{status=\"success\"}[5m]) / rate(celery_tasks_total[5m])",
+            "legendFormat": "Success Rate"
+          },
+          {
+            "expr": "rate(celery_tasks_total{status=\"failure\"}[5m]) / rate(celery_tasks_total[5m])",
+            "legendFormat": "Failure Rate"
+          }
+        ],
+        "yaxes": [
+          {"format": "percentunit", "label": "Rate"},
+          {"format": "short"}
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8}
+      }
+    ]
+  }
+}
+

@@ -1,0 +1,226 @@
+name: Mobile CI/CD
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'mobile/**'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'mobile/**'
+  workflow_dispatch:
+
+jobs:
+  analyze:
+    name: Analyze Code
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: 'stable'
+          cache: true
+      
+      - name: Install dependencies
+        working-directory: mobile
+        run: flutter pub get
+      
+      - name: Analyze code
+        working-directory: mobile
+        run: flutter analyze
+      
+      - name: Check formatting
+        working-directory: mobile
+        run: dart format --set-exit-if-changed .
+
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: 'stable'
+          cache: true
+      
+      - name: Install dependencies
+        working-directory: mobile
+        run: flutter pub get
+      
+      - name: Run unit tests
+        working-directory: mobile
+        run: flutter test --coverage
+      
+      - name: Upload coverage
+        uses: codecov/codecov-action@v3
+        with:
+          file: mobile/coverage/lcov.info
+          flags: mobile
+          name: mobile-coverage
+
+  build-android:
+    name: Build Android
+    runs-on: ubuntu-latest
+    needs: [analyze, test]
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: 'stable'
+          cache: true
+      
+      - name: Install dependencies
+        working-directory: mobile
+        run: flutter pub get
+      
+      - name: Build APK (Debug)
+        working-directory: mobile
+        run: flutter build apk --debug --flavor dev -t lib/main_dev.dart
+      
+      - name: Build APK (Release)
+        working-directory: mobile
+        run: flutter build apk --release --flavor prod -t lib/main_prod.dart
+      
+      - name: Build AAB (Release)
+        working-directory: mobile
+        run: flutter build appbundle --release --flavor prod -t lib/main_prod.dart
+      
+      - name: Upload APK artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: android-apk-debug
+          path: mobile/build/app/outputs/flutter-apk/app-dev-debug.apk
+          retention-days: 7
+      
+      - name: Upload AAB artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: android-aab-release
+          path: mobile/build/app/outputs/bundle/prodRelease/app-prod-release.aab
+          retention-days: 30
+
+  build-ios:
+    name: Build iOS
+    runs-on: macos-latest
+    needs: [analyze, test]
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: 'stable'
+          cache: true
+      
+      - name: Install dependencies
+        working-directory: mobile
+        run: flutter pub get
+      
+      - name: Install CocoaPods
+        working-directory: mobile/ios
+        run: pod install
+      
+      - name: Build iOS (Debug)
+        working-directory: mobile
+        run: flutter build ios --debug --flavor dev -t lib/main_dev.dart --no-codesign
+      
+      - name: Build iOS (Release)
+        working-directory: mobile
+        run: flutter build ios --release --flavor prod -t lib/main_prod.dart --no-codesign
+      
+      - name: Upload IPA artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: ios-ipa-release
+          path: mobile/build/ios/ipa/*.ipa
+          retention-days: 30
+          if-no-files-found: ignore
+
+  deploy-android:
+    name: Deploy to Google Play
+    runs-on: ubuntu-latest
+    needs: [build-android]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: 'stable'
+      
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+      
+      - name: Setup Fastlane
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+          bundler-cache: true
+      
+      - name: Install Fastlane dependencies
+        working-directory: mobile
+        run: |
+          gem install fastlane
+          bundle install
+      
+      - name: Deploy to Google Play Internal
+        working-directory: mobile
+        env:
+          GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          echo "$GOOGLE_PLAY_SERVICE_ACCOUNT_JSON" > fastlane/google-play-service-account.json
+          fastlane android internal
+
+  deploy-ios:
+    name: Deploy to TestFlight
+    runs-on: macos-latest
+    needs: [build-ios]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: 'stable'
+      
+      - name: Setup Fastlane
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+          bundler-cache: true
+      
+      - name: Install CocoaPods
+        working-directory: mobile/ios
+        run: pod install
+      
+      - name: Install Fastlane dependencies
+        working-directory: mobile
+        run: |
+          gem install fastlane
+          bundle install
+      
+      - name: Deploy to TestFlight
+        working-directory: mobile
+        env:
+          APP_STORE_CONNECT_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+        run: fastlane ios testflight

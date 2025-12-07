@@ -1,0 +1,80 @@
+# Fastfile для автоматизации сборок Flutter приложения
+
+default_platform(:android)
+
+platform :android do
+  desc "Сборка debug APK"
+  lane :debug do
+    sh("flutter clean")
+    sh("flutter pub get")
+    sh("flutter build apk --debug --flavor dev -t lib/main_dev.dart")
+  end
+
+  desc "Сборка release APK"
+  lane :release_apk do
+    sh("flutter clean")
+    sh("flutter pub get")
+    sh("flutter build apk --release --flavor prod -t lib/main_prod.dart")
+  end
+
+  desc "Сборка release AAB"
+  lane :release_aab do
+    sh("flutter clean")
+    sh("flutter pub get")
+    sh("flutter build appbundle --release --flavor prod -t lib/main_prod.dart")
+  end
+end
+
+platform :ios do
+  desc "Сборка debug для iOS"
+  lane :debug do
+    sh("flutter clean")
+    sh("flutter pub get")
+    sh("flutter build ios --debug --flavor dev -t lib/main_dev.dart --no-codesign")
+  end
+
+  desc "Сборка release для iOS"
+  lane :release do
+    sh("flutter clean")
+    sh("flutter pub get")
+    sh("flutter build ios --release --flavor prod -t lib/main_prod.dart")
+    
+    build_app(
+      workspace: "ios/Runner.xcworkspace",
+      scheme: "prod",
+      export_method: "app-store",
+      export_options: {
+        method: "app-store",
+        provisioningProfiles: {
+          "com.ringo.uchet.prod" => "match AppStore com.ringo.uchet.prod"
+        }
+      }
+    )
+  end
+end
+
+# Общие задачи
+desc "Запуск всех тестов"
+lane :test do
+  sh("flutter test")
+end
+
+desc "Анализ кода"
+lane :analyze do
+  sh("flutter analyze")
+end
+
+desc "Проверка линтера"
+lane :lint do
+  sh("flutter analyze --no-fatal-infos")
+end
+
+desc "Полная проверка перед релизом"
+lane :pre_release do
+  test
+  analyze
+  lint
+  sh("flutter build apk --release --flavor prod -t lib/main_prod.dart")
+  sh("flutter build appbundle --release --flavor prod -t lib/main_prod.dart")
+end
+

@@ -1,0 +1,15 @@
+# Пример inventory файла для Ansible
+# Скопируйте в inventory.ini и заполните реальными IP адресами
+
+[api_servers]
+api1 ansible_host=1.2.3.4 ansible_user=root
+api2 ansible_host=1.2.3.5 ansible_user=root
+
+[worker_servers]
+worker1 ansible_host=1.2.3.6 ansible_user=root
+worker2 ansible_host=1.2.3.7 ansible_user=root
+
+[all:vars]
+ansible_python_interpreter=/usr/bin/python3
+ansible_ssh_private_key_file=~/.ssh/id_rsa
+

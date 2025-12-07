@@ -1,0 +1,298 @@
+name: Backend CI/CD
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend.yml'
+  pull_request:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'backend/**'
+  workflow_dispatch:
+
+env:
+  DOCKER_REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}/ringo-backend
+
+jobs:
+  lint:
+    name: Lint & Format Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      - name: Install dependencies
+        working-directory: ./backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8 black isort mypy
+          pip install -r requirements.txt
+      
+      - name: Run flake8
+        working-directory: ./backend
+        run: |
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+      
+      - name: Check formatting with black
+        working-directory: ./backend
+        run: black --check .
+      
+      - name: Check import sorting with isort
+        working-directory: ./backend
+        run: isort --check-only .
+      
+      - name: Run mypy
+        working-directory: ./backend
+        run: |
+          mypy . --ignore-missing-imports --no-strict-optional || true
+
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: ringo_test
+          POSTGRES_USER: ringo_test
+          POSTGRES_PASSWORD: ringo_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      - name: Install dependencies
+        working-directory: ./backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-django pytest-cov coverage
+      
+      - name: Run migrations
+        working-directory: ./backend
+        env:
+          POSTGRES_DB: ringo_test
+          POSTGRES_USER: ringo_test
+          POSTGRES_PASSWORD: ringo_test
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          CELERY_BROKER_URL: redis://localhost:6379/0
+          CELERY_RESULT_BACKEND: redis://localhost:6379/0
+          DJANGO_SECRET_KEY: test-secret-key-for-ci
+          DJANGO_SETTINGS_MODULE: ringo_backend.settings.local
+        run: |
+          python manage.py migrate
+      
+      - name: Run tests with coverage
+        working-directory: ./backend
+        env:
+          POSTGRES_DB: ringo_test
+          POSTGRES_USER: ringo_test
+          POSTGRES_PASSWORD: ringo_test
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          CELERY_BROKER_URL: redis://localhost:6379/0
+          CELERY_RESULT_BACKEND: redis://localhost:6379/0
+          DJANGO_SECRET_KEY: test-secret-key-for-ci
+          DJANGO_SETTINGS_MODULE: ringo_backend.settings.local
+        run: |
+          pytest --cov=. --cov-report=xml --cov-report=html --cov-report=term
+      
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./backend/coverage.xml
+          flags: backend
+          name: backend-coverage
+
+  build:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    if: github.event_name != 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.DOCKER_REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+      
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [build]
+    if: github.ref == 'refs/heads/develop'
+    environment:
+      name: staging
+      url: https://api-staging.ringo.example.com
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Deploy to staging
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.STAGING_HOST }}
+          username: ${{ secrets.STAGING_USER }}
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          script: |
+            cd /opt/ringo
+            export DOCKER_REGISTRY=${{ env.DOCKER_REGISTRY }}
+            export IMAGE_NAME=${{ env.IMAGE_NAME }}
+            export IMAGE_TAG=${{ github.sha }}
+            export DB_HOST=${{ secrets.STAGING_DB_HOST }}
+            export DB_PORT=${{ secrets.STAGING_DB_PORT }}
+            export DB_NAME=${{ secrets.STAGING_DB_NAME }}
+            export DB_USER=${{ secrets.STAGING_DB_USER }}
+            export DB_PASSWORD=${{ secrets.STAGING_DB_PASSWORD }}
+            export CELERY_BROKER_URL=${{ secrets.STAGING_CELERY_BROKER_URL }}
+            export CELERY_RESULT_BACKEND=${{ secrets.STAGING_CELERY_RESULT_BACKEND }}
+            export AWS_S3_ENDPOINT_URL=${{ secrets.STAGING_AWS_S3_ENDPOINT_URL }}
+            export AWS_ACCESS_KEY_ID=${{ secrets.STAGING_AWS_ACCESS_KEY_ID }}
+            export AWS_SECRET_ACCESS_KEY=${{ secrets.STAGING_AWS_SECRET_ACCESS_KEY }}
+            export AWS_BUCKET=${{ secrets.STAGING_AWS_BUCKET }}
+            
+            # Pull latest image
+            docker pull $DOCKER_REGISTRY/$IMAGE_NAME:$IMAGE_TAG || docker pull $DOCKER_REGISTRY/$IMAGE_NAME:develop-${{ github.sha }}
+            
+            # Run migrations
+            docker run --rm \
+              -e DJANGO_SETTINGS_MODULE=ringo_backend.settings.staging \
+              -e POSTGRES_HOST=$DB_HOST \
+              -e POSTGRES_PORT=$DB_PORT \
+              -e POSTGRES_DB=$DB_NAME \
+              -e POSTGRES_USER=$DB_USER \
+              -e POSTGRES_PASSWORD=$DB_PASSWORD \
+              $DOCKER_REGISTRY/$IMAGE_NAME:$IMAGE_TAG \
+              python manage.py migrate --noinput
+            
+            # Restart services
+            docker-compose -f docker-compose.prod.yml pull
+            docker-compose -f docker-compose.prod.yml up -d
+            
+            # Health check
+            sleep 10
+            curl -f http://localhost:8000/api/health/ || exit 1
+
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [build]
+    if: github.ref == 'refs/heads/main'
+    environment:
+      name: production
+      url: https://api.ringo.example.com
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Deploy to production
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.PROD_HOST }}
+          username: ${{ secrets.PROD_USER }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          script: |
+            cd /opt/ringo
+            export DOCKER_REGISTRY=${{ env.DOCKER_REGISTRY }}
+            export IMAGE_NAME=${{ env.IMAGE_NAME }}
+            export IMAGE_TAG=${{ github.sha }}
+            export DB_HOST=${{ secrets.PROD_DB_HOST }}
+            export DB_PORT=${{ secrets.PROD_DB_PORT }}
+            export DB_NAME=${{ secrets.PROD_DB_NAME }}
+            export DB_USER=${{ secrets.PROD_DB_USER }}
+            export DB_PASSWORD=${{ secrets.PROD_DB_PASSWORD }}
+            export CELERY_BROKER_URL=${{ secrets.PROD_CELERY_BROKER_URL }}
+            export CELERY_RESULT_BACKEND=${{ secrets.PROD_CELERY_RESULT_BACKEND }}
+            export AWS_S3_ENDPOINT_URL=${{ secrets.PROD_AWS_S3_ENDPOINT_URL }}
+            export AWS_ACCESS_KEY_ID=${{ secrets.PROD_AWS_ACCESS_KEY_ID }}
+            export AWS_SECRET_ACCESS_KEY=${{ secrets.PROD_AWS_SECRET_ACCESS_KEY }}
+            export AWS_BUCKET=${{ secrets.PROD_AWS_BUCKET }}
+            
+            # Pull latest image
+            docker pull $DOCKER_REGISTRY/$IMAGE_NAME:$IMAGE_TAG || docker pull $DOCKER_REGISTRY/$IMAGE_NAME:main-${{ github.sha }}
+            
+            # Run migrations with backup
+            docker run --rm \
+              -e DJANGO_SETTINGS_MODULE=ringo_backend.settings.prod \
+              -e POSTGRES_HOST=$DB_HOST \
+              -e POSTGRES_PORT=$DB_PORT \
+              -e POSTGRES_DB=$DB_NAME \
+              -e POSTGRES_USER=$DB_USER \
+              -e POSTGRES_PASSWORD=$DB_PASSWORD \
+              $DOCKER_REGISTRY/$IMAGE_NAME:$IMAGE_TAG \
+              python manage.py migrate --noinput
+            
+            # Rolling update: restart services one by one
+            docker-compose -f docker-compose.prod.yml pull
+            docker-compose -f docker-compose.prod.yml up -d --no-deps --scale api=1
+            
+            # Health check
+            sleep 15
+            curl -f https://api.ringo.example.com/api/health/ || exit 1
+            
+            # Scale back to full capacity
+            docker-compose -f docker-compose.prod.yml up -d
+

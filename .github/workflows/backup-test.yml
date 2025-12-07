@@ -1,0 +1,108 @@
+name: Backup Test
+
+on:
+  schedule:
+    # Еженедельно в воскресенье в 3:00 UTC
+    - cron: '0 3 * * 0'
+  workflow_dispatch:
+
+jobs:
+  test-backup-restore:
+    name: Test Backup Restoration
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: ringo_test
+          POSTGRES_USER: ringo_test
+          POSTGRES_PASSWORD: ringo_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+      
+      - name: Create test data
+        env:
+          PGHOST: localhost
+          PGPORT: 5432
+          PGDATABASE: ringo_test
+          PGUSER: ringo_test
+          PGPASSWORD: ringo_test
+        run: |
+          psql -c "CREATE TABLE test_table (id SERIAL PRIMARY KEY, data TEXT);"
+          psql -c "INSERT INTO test_table (data) VALUES ('test data 1'), ('test data 2');"
+          psql -c "SELECT COUNT(*) FROM test_table;"
+      
+      - name: Create backup
+        env:
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_NAME: ringo_test
+          DB_USER: ringo_test
+          DB_PASSWORD: ringo_test
+          BACKUP_DIR: /tmp/backups
+        run: |
+          mkdir -p /tmp/backups
+          chmod +x infra/backup/scripts/backup-postgres.sh
+          infra/backup/scripts/backup-postgres.sh full
+      
+      - name: Verify backup file exists
+        run: |
+          BACKUP_FILE=$(ls -t /tmp/backups/postgres_*.sql.gz | head -1)
+          if [ -z "$BACKUP_FILE" ]; then
+            echo "ERROR: Backup file not found"
+            exit 1
+          fi
+          echo "Backup file: $BACKUP_FILE"
+          ls -lh "$BACKUP_FILE"
+      
+      - name: Test restore
+        env:
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_NAME: ringo_test_restore
+          DB_USER: ringo_test
+          DB_PASSWORD: ringo_test
+          POSTGRES_USER: ringo_test
+          POSTGRES_PASSWORD: ringo_test
+          BACKUP_DIR: /tmp/backups
+        run: |
+          chmod +x infra/backup/scripts/test-restore.sh
+          BACKUP_FILE=$(ls -t /tmp/backups/postgres_*.sql.gz | head -1)
+          echo "yes" | infra/backup/scripts/test-restore.sh "$BACKUP_FILE"
+      
+      - name: Verify restored data
+        env:
+          PGHOST: localhost
+          PGPORT: 5432
+          PGDATABASE: ringo_test_restore
+          PGUSER: ringo_test
+          PGPASSWORD: ringo_test
+        run: |
+          COUNT=$(psql -t -c "SELECT COUNT(*) FROM test_table;" | xargs)
+          if [ "$COUNT" != "2" ]; then
+            echo "ERROR: Expected 2 rows, got $COUNT"
+            exit 1
+          fi
+          echo "✓ Backup restoration test passed"
+      
+      - name: Upload backup test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backup-test-results
+          path: /tmp/backups/*.log
+          retention-days: 7
+

@@ -1,0 +1,51 @@
+name: Sentry Release Tracking
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  workflow_dispatch:
+
+jobs:
+  create-release:
+    name: Create Sentry Release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Create Backend Release
+        uses: getsentry/action-release@v1
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          SENTRY_PROJECT: ringo-backend
+        with:
+          environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
+          version: backend-${{ github.sha }}
+          set_commits: auto
+      
+      - name: Create Mobile Release
+        uses: getsentry/action-release@v1
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          SENTRY_PROJECT: ringo-mobile
+        with:
+          environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
+          version: mobile-${{ github.sha }}
+          set_commits: auto
+      
+      - name: Create Frontend Release
+        uses: getsentry/action-release@v1
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          SENTRY_PROJECT: ringo-frontend
+        with:
+          environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
+          version: frontend-${{ github.sha }}
+          set_commits: auto
+

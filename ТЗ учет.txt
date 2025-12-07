@@ -1,0 +1,339 @@
+
+Отлично — беру на себя роль лучшего в мире специалиста по ТЗ и архитектора ecosytem’ы. Ниже — полное, атомарное техническое задание (back → api → admin → мобильный фронт → дизайн → деплой → тесты). Я разложил всё по винтикам так, чтобы потом ни у тебя, ни у других разработчиков не было вопросов «что дальше». Всё сделано под стек: Django (REST) на бэкенде, Flutter — мобильное приложение (почему Flutter: единая кодовая база iOS/Android, отличная интеграция с PDF/печатью/оффлайном, быстро развернуть и кастомизировать). Для веб-админки/публичного сайта — Next.js (React) (SSR, SEO, удобство маркетинг-страниц).
+
+Если хочешь — могу прямо сейчас сгенерировать рабочий skeleton-код (Django models/serializers/admin + Flutter scaffold). Ниже — полное ТЗ.
+
+1. Краткая цель проекта
+
+Мобильное приложение и корпоративный сайт + защищённый бэкенд для компании по аренде спецтехники и оказанию сопутствующих услуг.
+Ключевые функции:
+ • Заводить/редактировать заявки (статусы: «заведена», «утверждена», «выполнена», «отменена» и т.д.).
+ • Автоматический расчёт стоимости (аренда техники по часам/суткам + услуги + доставка + материалы).
+ • Генерация PDF-чека/счёта и возможность скачать/поделиться.
+ • Управление номенклатурой техники/услуг/материалов.
+ • Отчёты: общий, доходы, расходы, по технике, по сотрудникам (с графиками).
+ • Роли: админ, менеджер, сотрудник (оператор), бухгалтер/смотрящий.
+ • Удобная админка (Django admin + кастомная панель Next.js для маркетинга/карточек).
+ • Безопасность, бэкапы, логирование, CI/CD, мониторинг.
+
+2. Пользователи и роли (RBAC)
+ 1. Admin (владелец) — полный доступ: все заявки, платежи, отчёты, права пользователей, тарифы, расходы, зарплаты, интеграции.
+ 2. Менеджер — создает/редактирует заявки, назначает технику и оператора, изменяет статус заявки (но не фин. отчеты/настройки тарифов).
+ 3. Сотрудник / Оператор — видит свои назначения, отмечает начало/окончание работ, снимает фото, заполняет отчёт по рейсу, видит свою заработанную часть.
+ 4. Бухгалтер / Финансист — доступ к финансовым отчётам, актам, оплатам, экспортам.
+ 5. Клиент (будущий) — опционально: простой public-frontend где можно оставить заявку/запрос (не обязательно в MVP).
+
+3. Пользовательские сценарии (UX flows)
+ • Менеджер создал заявку: ввод адреса, даты/времени, описание задачи, выбрал технику/услуги/материалы, назначил оператора → заявка «заведена».
+ • Менеджер/клиент подтверждают → переключение в «утверждена», система рассчитывает предварительную стоимость.
+ • По завершении работ оператор ставит статус «выполнена», прикрепляет фото и расходники; система рассчитывает итоговую стоимость (учёт переработок, дополнительных материалов) → формируется PDF и акт.
+ • Админ может просматривать финансовые отчёты, фильтровать по дате, технике, сотруднику.
+
+4. Функциональные требования (подробно — атомы)
+
+4.1 Заявки (Orders / Requests)
+
+Поля заявки:
+ • Номер (автоинкремент), external_id (uuid)
+ • Клиент: имя, телефон, e-mail (опционально)
+ • Адрес (строка) + геокоординаты (lat/lng)
+ • Дата/время начала и конца
+ • Описание работы (текст)
+ • Выбранная техника (список позиций с кол-вом, ставкой)
+ • Выбранные услуги / материалы / навески (с количеством)
+ • Статус: DRAFT, CREATED, APPROVED, IN_PROGRESS, COMPLETED, CANCELLED
+ • Исполнитель (сотрудник/оператор)
+ • Менеджер (создал)
+ • Предоплата (сумма/статус)
+ • Итоговая сумма, расчётная формула (JSON snapshot)
+ • Вложения: фото, акты, документы
+ • Время создания/обновления, логи статусов (audit trail)
+
+Поведение:
+ • При смене статуса — добавляется строчка в логе: кто, когда, комментарий.
+ • CalculatedPriceSnapshot хранится (чтобы чек всегда можно было восстановить).
+
+4.2 Номенклатура (Catalog)
+ • Equipment (техника): id, name, code, hourly_rate, daily_rate, fuel_consumption_estimate, status (available/maintenance), photos, last_maintenance_date.
+ • ServiceCategory (например: Благоустройство, Копка, Доставка)
+ • ServiceItem: id, category, name, unit (m3/hour/hour_machine/pcs), price_unit, default_duration, included_items (JSON list)
+ • MaterialItem: песок, щебень и т.д. (price per m3/ton)
+
+Alik Han, [25.11.2025 17:53]
+• Attachment/Tool (набор навесок) — если цена зависит от навески.
+
+4.3 Финансы
+ • Invoice / Receipt: привязка к заявке, pdf_generated, payment_status.
+ • Expense (топливо, ремонт, аренда агрегатов) — дата, сумма, техника/сотрудник/комментарий.
+ • SalaryRecord — расчёт ЗП сотрудника по выручке/фикс.ставке/часам.
+ • Payment — интеграции, метод (cash, bank_transfer, online), статус.
+
+4.4 Отчёты
+ • Общий (за период): доходы, расходы, маржа (графики: линии, столбцы).
+ • По технике: доходы, часы работы, расходы (топливо, ремонт).
+ • По сотрудникам: выручка на сотрудника, выплаты.
+ • Экспорт в CSV/XLSX и PDF.
+ • Дашборд: KPI за период, top 5 машин по доходу, загрузка парка.
+
+4.5 PDF/Акты/Чеки
+ • Шаблон генерируется на основе HTML+CSS → WeasyPrint / wkhtmltopdf / ReportLab.
+ • Структура чека: шапка (логотип, реквизиты), данные клиента, номер заказа, детальная позиция (мастер-таблица), итог, подписи, QR-код (ссылка/подтверждение).
+ • Возможность скачать/отправить по e-mail/WhatsApp.
+
+4.6 Уведомления
+ • Push (Firebase Cloud Messaging) — оповещения о новых задачах, смене статуса.
+ • Email — отправка счетов/подтверждений.
+ • SMS (опционально) — интеграция провайдеров.
+
+4.7 Фотопротокол и гео-подтверждение
+ • Оператор делает фото до/после → привязка к заказу + GPS метка.
+ • Фото хранятся в S3 (или аналоге) с версионированием.
+
+4.8 Безопасность и аудит
+ • Аутентификация: JWT + Refresh tokens на REST API.
+ • Шифрование секретов, паролей (bcrypt).
+ • Audit logs: кто и какие действия делал над заявкой.
+ • RBAC: Django permissions + кастомные декораторы/миксины.
+
+5. Нефункциональные требования
+ • Отказоустойчивость: резервные копии БД ежедневно; логирование ошибок.
+ • SLA: отклик API < 200 ms (на обычных запросах), поддержка 50–200 одновременных пользователей в MVP.
+ • Масштабируемость: stateless backend, media в объектном хранилище (S3), БД — PostgreSQL.
+ • Логи/мониторинг: Sentry + Prometheus/Grafana (ops).
+ • Международная локализация: RU + EN (i18n-ready).
+ • Конфигурация: 12-factor app.
+
+6. Архитектура системы (высокоуровнево)
+ • Mobile (Flutter) ⇄ Django REST API ⇄ PostgreSQL
+ • Static/media → S3 / DigitalOcean Spaces
+ • Background jobs (PDF generation, email, heavy reports) → Celery + Redis
+ • Authentication → JWT (djangorestframework-simplejwt)
+ • Monitoring → Sentry + Prometheus
+ • CI/CD → GitHub Actions / GitLab CI (lint → tests → build → deploy)
+ • Хостинг: AWS / DigitalOcean / Hetzner (рекомендация: DigitalOcean для старта, AWS для масштабирования).
+
+7. Детали реализации (Django): модели + serializers + admin (скелетон)
+
+Ниже — минимально достаточный набор моделей (псевдокод Django — готов к вставке в проект).
+
+# models.py (основные сущности)
+from django.db import models
+from django.contrib.auth.models import User
+import uuid
+
+class Equipment(models.Model):
+    id = models.AutoField(primary_key=True)
+    code = models.CharField(max_length=50, unique=True)
+    name = models.CharField(max_length=200)
+    hourly_rate = models.DecimalField(max_digits=10, decimal_places=2)
+    daily_rate = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    fuel_consumption = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
+    status = models.CharField(max_length=20, default='available')
+    photos = models.JSONField(default=list, blank=True)
+    last_maintenance = models.DateField(null=True, blank=True)
+
+class ServiceCategory(models.Model):
+    name = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
+
+class ServiceItem(models.Model):
+    category = models.ForeignKey(ServiceCategory, on_delete=models.CASCADE, related_name='items')
+    name = models.CharField(max_length=200)
+    unit = models.CharField(max_length=20)  # e.g. m3, hour
+    price = models.DecimalField(max_digits=10, decimal_places=2)
+    default_duration = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+
+class Client(models.Model):
+    name = models.CharField(max_length=200)
+    phone = models.CharField(max_length=30)
+    email = models.EmailField(null=True, blank=True)
+
+Alik Han, [25.11.2025 17:53]
+address = models.TextField(null=True, blank=True)
+
+class Order(models.Model):
+    STATUS_CHOICES = [('DRAFT','DRAFT'),('CREATED','CREATED'),('APPROVED','APPROVED'),
+                      ('IN_PROGRESS','IN_PROGRESS'),('COMPLETED','COMPLETED'),('CANCELLED','CANCELLED')]
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    number = models.CharField(max_length=20, unique=True)
+    client = models.ForeignKey(Client, on_delete=models.SET_NULL, null=True, blank=True)
+    address = models.TextField()
+    lat = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    lng = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    start_dt = models.DateTimeField()
+    end_dt = models.DateTimeField(null=True, blank=True)
+    description = models.TextField(blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='DRAFT')
+    manager = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='managed_orders')
+    operator = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='operated_orders')
+    price_snapshot = models.JSONField(default=dict)  # сохраняем расчёт
+    total_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+class OrderItem(models.Model):
+    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='items')
+    item_type = models.CharField(max_length=20, choices=[('equipment','equipment'),('service','service'),('material','material')])
+    ref_id = models.IntegerField()  # id в соответствующей таблице
+    quantity = models.DecimalField(max_digits=8, decimal_places=2, default=1)
+    unit_price = models.DecimalField(max_digits=10, decimal_places=2)
+
+class Invoice(models.Model):
+    order = models.OneToOneField(Order, on_delete=models.CASCADE)
+    number = models.CharField(max_length=50, unique=True)
+    pdf_file = models.FileField(upload_to='invoices/')
+    created_at = models.DateTimeField(auto_now_add=True)
+    payment_status = models.CharField(max_length=20, default='unpaid')
+
+class Expense(models.Model):
+    date = models.DateField()
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    category = models.CharField(max_length=200)  # fuel, repair
+    equipment = models.ForeignKey(Equipment, on_delete=models.SET_NULL, null=True, blank=True)
+    comment = models.TextField(blank=True)
+
+Serializers (DRF) — стандартные ModelSerializer для каждой сущности. Использовать вложенные сериализаторы для Order → OrderItem. При сохранении заявки реализовать perform_create/perform_update, которые вызывают расчётный сервис (см. Pricing Engine).
+
+Admin — регистрация всех моделей; для Order → кастомный list_display: number, client, status, manager, total_amount, start_dt. Фильтры по статусу и технике. Inline для OrderItem.
+
+8. Pricing Engine (важно — правила расчёта)
+ • Входные данные: список позиций (equipment, service, materials), время работы (start, end), дополнительные услуги (доставка, установка), скидки/компенсации.
+ • Правила:
+ • Техника: расчет по часам (с округлением до 0.5 часа) или по дням (если > X часов).
+ • Материалы: price_unit * quantity.
+ • Навески/допы: фиксированная сумма или процент.
+ • Налоги: учесть НДС если нужно.
+ • Пенализация: за опоздание/переработки автоматическое изменение итоговой суммы.
+ • Результат: детализированная таблица с позициями и суммами + итог, предоплата, остаток.
+ • Реализация: чистая Python-функция/сервис (services/pricing.py) → тесты покрывающие edge cases (0 qty, negative, rounding).
+
+9. API (REST) — основные эндпоинты (пример)
+ • POST /api/auth/login/ — получить JWT
+ • POST /api/auth/refresh/
+ • GET /api/equipment/ — список техники
+ • GET /api/services/ — список услуг
+ • GET /api/orders/ — список заявок (фильтры: status, date_from, date_to, equipment)
+ • POST /api/orders/ — создать заявку (в теле — items)
+ • GET /api/orders/{id}/ — подробности
+
+Alik Han, [25.11.2025 17:53]
+• PATCH /api/orders/{id}/status/ — смена статуса (логирование)
+ • POST /api/orders/{id}/generate_invoice/ — формирование PDF
+ • GET /api/reports/summary/?from=YYYY-MM-DD&to=YYYY-MM-DD — отчёт
+
+Все API — документируются Swagger/OpenAPI (drf-yasg или drf-spectacular).
+
+10. Мобильное приложение (Flutter) — структура и экраны
+
+10.1 Технологии
+ • Flutter (stable), Riverpod (state management) или Bloc — я рекомендую Riverpod для гибкости.
+ • HTTP: dio с interceptor для auth.
+ • Local DB: sqflite/hive для оффлайн кеша.
+ • Push: Firebase Cloud Messaging.
+ • PDF: printing + HTML to PDF (flutter_html_to_pdf) или получение готового pdf с сервера.
+ • File uploads: multipart через Dio.
+
+10.2 Основные экраны & flows
+ 1. Login — логин по номеру/паролю + OTP (опционально).
+ 2. Дашборд — карточки: новые заявки, назначенные, прибыль за месяц (краткий).
+ 3. Список заявок — фильтры по статусам (цвета), поиск.
+ 4. Карточка заявки (detail) — все поля, кнопки: сменить статус, назначить оператора, добавить фото, добавить расход, вызвать расчёт стоимости, сгенерировать/скачать PDF.
+ 5. Создать заявку — шаги: клиент → адрес (карта/автозаполнение) → выбор техники/услуг → сроки → сохранить.
+ 6. Номенклатура — техника/услуги/материалы.
+ 7. Отчёты (для admin) — графики (line, bar) с фильтрами по датам.
+ 8. Профиль — зарплаты, настройки уведомлений.
+ 9. Offline Queue — очередь действий при отсутствии сети.
+
+10.3 UX детали
+ • Цвета статусов: DRAFT — серый, CREATED — синий, APPROVED — оранжевый, IN_PROGRESS — фиолет/бирюза, COMPLETED — зелёный, CANCELLED — красный. (Пришлёшь фото интерфейса — подберу точные значения.)
+ • В карточках: иконки техники + тап по фото → lightbox.
+ • Подтверждение статуса — модальное окно с полем «комментарий/фото».
+
+11. Веб-сайт (Next.js) — публичная часть
+ • Маркетинговые страницы (о компании, услуги, парк техники), SEO.
+ • Форма «Заказать технику» → создает Lead / Pre-order → попадает в CRM (admin).
+ • Админ-панель для менеджеров: можно ввести простой SPA с интегрированными графиками (Chart.js / ApexCharts).
+
+12. Отчёты и визуализация
+ • Использовать библиотеку на бэкенде для экспортов: pandas/openpyxl для Excel.
+ • На фронте (Flutter) — интегрировать charts_flutter / fl_chart.
+ • Дашборд: возможности drill-down (клик на технику → детальный отчет за период).
+
+13. Хранение файлов и безопасность
+ • Медиа: S3-compatible storage (DigitalOcean Spaces / AWS S3). Подпись URL для временного доступа.
+ • Сертификаты: HTTPS (Let’s Encrypt).
+ • Секреты: Hashicorp Vault / environment variables; никогда не хранить креды в репозитории.
+
+14. CI/CD и деплой
+ • Репозитории: backend/ (Django), mobile/ (Flutter), frontend/ (Next.js).
+ • GitHub Actions:
+ • Backend: lint → unit tests → build docker image → push to registry → deploy to server.
+ • Mobile: lint → unit tests → build apk/ipa artifacts (for QA).
+ • Frontend: build → deploy to Vercel (Next.js).
+ • Рекомендация деплоя: Docker + Kubernetes (если масштаб), или Docker Compose / DigitalOcean App Platform для MVP.
+
+15. Мониторинг и логирование
+ • Errors → Sentry.
+ • Metrics → Prometheus + Grafana.
+ • Access logs + audit logs в отдельный bucket.
+
+16. Тестирование и Acceptance Criteria
+ • Unit tests: pricing engine, serializers, key views — покрытие минимум 70% в модуле расчёта.
+ • Integration tests: API flows (order create → approve → generate invoice).
+ • Manual QA checklist: create order, change status, attach photos, generate pdf, push notifications.
+ • Acceptance: на приемке заказчиком весь основной сценарий (создание → утверждение → выполнение → генерация PDF) должен работать без ошибок; отчёты корректно считают суммы за выбранный период.
+
+17. Документация и handover
+ • API: OpenAPI + examples.
+ • Архитектурный документ (README архитектуры).
+ • Руководство администратора (как менять тарифы, создавать технику).
+ • Руководство devops: команды deploy, откат, бэкап.
+
+18. Безопасность персональных данных (GDPR/РФ)
+ • Хранение персональных данных клиентов шифруется, доступ по правам.
+ • Логи с PII удаляются по политике хранения (например 90 дней).
+
+Alik Han, [25.11.2025 17:53]
+• Предоставить соглашение об обработке персональных данных и cookie policy (для сайта).
+
+19. Модульный план работ / этапы (MVP → v1 → v2)
+
+MVP (4–6 недель, примерно)
+ 1. Архитектура, ERD, спецификации API (2–3 дня).
+ 2. Backend: базовые модели, auth, CRUD для Orders/Equipment (1 неделя).
+ 3. Flutter app: логин, список заявок, detail, create (1.5 недели).
+ 4. PDF gen + invoice endpoint (3 дня).
+ 5. Базовая отчётность + admin (3–4 дня).
+ 6. QA + деплой (3–4 дня).
+
+v1 (после MVP)
+ • Push-уведомления, offline, расширенные отчёты, интеграции оплат, SMS.
+v2
+ • Расширенная аналитика, оптимизация, multi-tenant (если будет рост).
+
+Примечание: сроки ориентировочные — зависят от команды. Я составил план так, чтобы каждая итерация приносила ценность (создает реальные бизнес-функции).
+
+20. Что обычно упускают в «плохих» ТЗ (и что я добавил)
+ 1. Snapshot расчёта — сохранение точного расчёта чека в момент генерации (чтобы чек не «переехал» при смене тарифов). — Добавил.
+ 2. Логирование статусов (audit trail) — часто забывают. — Добавил.
+ 3. Фотопротокол + GPS — для претензий и подтверждения работ. — Добавил.
+ 4. Отчёт по каждой технике (затраты: топливо/ремонт) — многие ТЗ только по доходу. — Добавил.
+ 5. Процесс/формат PDF — кто генерирует, где хранится, шаблон — часто расплывчато. — Подробно описал.
+ 6. Тесты для pricing engine — критично, но забывают. — Добавил обязательные unit tests.
+ 7. Security & backups — у многих поверхностно. — Подробно расписал.
+ 8. Offline и retry queue для mobile — на стройках сеть хромает — включил.
+ 9. RBAC и уровни доступа к отчетам — чётко разделил права (админ видит всё, менеджер частично и т.д.) — включил.
+ 10. Audit и SLA на задержки (опоздание → скидка) — ты упомянул условие опоздания → скидка 10% — в ТЗ добавил бизнес-логику её применения.
+
+21. Acceptance criteria / Definition of Done (DoD)
+ • Backend: миграции, тесты, API документация, docker image, окружение staging/prod.
+ • Mobile: сборка debug/release, авторизация, основные сценарии (create/approve/complete/generate PDF), push notification.
+ • Deploy: HTTPS, резервные копии, Sentry, базовый CI.
+ • Документация: README + API swagger + user manual.
+
+22. Риски и mitigration
+ • Проблемы с сетью на объектах → offline queue + синхронизация.
+ • Ошибки в расчёте → покрыть unit tests, peer review pricing module.
+ • Большие PDF/медиа → хранение в S3, limit на размер, прогрессивная загрузка.
+ • Фрод/платежи → интегрировать платёжную систему с 3-rd party проверкой.
+

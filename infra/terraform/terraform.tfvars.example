@@ -1,0 +1,37 @@
+# Скопируйте этот файл в terraform.tfvars и заполните значениями
+# terraform.tfvars НЕ должен попадать в git (добавлен в .gitignore)
+
+do_token = "your-digitalocean-api-token-here"
+
+environment = "staging"  # или "production"
+
+region = "nyc1"
+
+# Database
+db_size      = "db-s-1vcpu-1gb"  # Для production: "db-s-2vcpu-4gb"
+db_node_count = 1
+
+# Redis
+redis_size = "db-s-1vcpu-1gb"
+
+# Instances
+api_instance_size  = "s-2vcpu-4gb"
+api_instance_count = 2
+
+worker_instance_size  = "s-2vcpu-4gb"
+worker_instance_count = 2
+celery_worker_concurrency = 4
+
+# Security
+ssh_key_ids = ["your-ssh-key-id-1", "your-ssh-key-id-2"]
+allowed_ssh_ips = ["1.2.3.4/32"]  # Ваш IP адрес
+
+# Domains
+domains = ["api.ringo.example.com", "www.ringo.example.com"]
+
+# CORS
+allowed_cors_origins = [
+  "https://ringo.example.com",
+  "https://www.ringo.example.com"
+]
+

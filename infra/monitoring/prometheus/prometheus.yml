@@ -1,0 +1,83 @@
+# Prometheus конфигурация для сбора метрик
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'ringo-uchet'
+    environment: '${ENVIRONMENT:-staging}'
+
+# Alertmanager конфигурация
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
+
+# Правила для алертов
+rule_files:
+  - '/etc/prometheus/alerts/*.yml'
+
+# Конфигурация scrape targets
+scrape_configs:
+  # Prometheus сам себя
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Django API метрики
+  - job_name: 'django-api'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets:
+          - 'api1:8000'
+          - 'api2:8000'
+    scrape_interval: 10s
+    scrape_timeout: 5s
+
+  # Gunicorn метрики (если используется gunicorn-prometheus)
+  - job_name: 'gunicorn'
+    static_configs:
+      - targets:
+          - 'api1:9091'
+          - 'api2:9091'
+    scrape_interval: 10s
+
+  # Celery workers метрики
+  - job_name: 'celery-workers'
+    static_configs:
+      - targets:
+          - 'worker1:9092'
+          - 'worker2:9092'
+    scrape_interval: 10s
+
+  # PostgreSQL метрики (через postgres_exporter)
+  - job_name: 'postgres'
+    static_configs:
+      - targets:
+          - 'postgres-exporter:9187'
+    scrape_interval: 30s
+
+  # Redis метрики (через redis_exporter)
+  - job_name: 'redis'
+    static_configs:
+      - targets:
+          - 'redis-exporter:9121'
+    scrape_interval: 30s
+
+  # Node exporter для системных метрик серверов
+  - job_name: 'node'
+    static_configs:
+      - targets:
+          - 'api1:9100'
+          - 'api2:9100'
+          - 'worker1:9100'
+          - 'worker2:9100'
+    scrape_interval: 30s
+
+  # Nginx метрики (если используется nginx-prometheus-exporter)
+  - job_name: 'nginx'
+    static_configs:
+      - targets:
+          - 'nginx-exporter:9113'
+    scrape_interval: 30s
+

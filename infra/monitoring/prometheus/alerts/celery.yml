@@ -1,0 +1,81 @@
+# Правила алертов для Celery
+
+groups:
+  - name: celery_alerts
+    interval: 30s
+    rules:
+      # Алерт на большое количество задач в очереди
+      - alert: HighCeleryQueueDepth
+        expr: celery_queue_length > 1000
+        for: 5m
+        labels:
+          severity: warning
+          component: celery
+        annotations:
+          summary: "Высокая глубина очереди Celery"
+          description: "Количество задач в очереди {{ $labels.queue_name }} превышает 1000. Текущее значение: {{ $value }}"
+
+      # Алерт на критическую глубину очереди
+      - alert: CriticalCeleryQueueDepth
+        expr: celery_queue_length > 5000
+        for: 2m
+        labels:
+          severity: critical
+          component: celery
+        annotations:
+          summary: "Критическая глубина очереди Celery"
+          description: "Количество задач в очереди {{ $labels.queue_name }} превышает 5000. Текущее значение: {{ $value }}"
+
+      # Алерт на высокий процент неудачных задач
+      - alert: HighCeleryTaskFailureRate
+        expr: |
+          rate(celery_tasks_total{status="failure"}[5m]) 
+          / 
+          rate(celery_tasks_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          component: celery
+        annotations:
+          summary: "Высокий процент неудачных задач Celery"
+          description: "Процент неудачных задач {{ $labels.task_name }} превышает 10%. Текущее значение: {{ $value | humanizePercentage }}"
+
+      # Алерт на критический процент неудачных задач
+      - alert: CriticalCeleryTaskFailureRate
+        expr: |
+          rate(celery_tasks_total{status="failure"}[5m]) 
+          / 
+          rate(celery_tasks_total[5m]) > 0.25
+        for: 2m
+        labels:
+          severity: critical
+          component: celery
+        annotations:
+          summary: "Критический процент неудачных задач Celery"
+          description: "Процент неудачных задач {{ $labels.task_name }} превышает 25%. Текущее значение: {{ $value | humanizePercentage }}"
+
+      # Алерт на долгие задачи
+      - alert: LongRunningCeleryTask
+        expr: |
+          histogram_quantile(0.95, 
+            rate(celery_task_duration_seconds_bucket[5m])
+          ) > 300
+        for: 5m
+        labels:
+          severity: warning
+          component: celery
+        annotations:
+          summary: "Долгие задачи Celery"
+          description: "95-й перцентиль длительности задач {{ $labels.task_name }} превышает 5 минут. Текущее значение: {{ $value }}s"
+
+      # Алерт на отсутствие активных workers
+      - alert: NoActiveCeleryWorkers
+        expr: up{job="celery-workers"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: celery
+        annotations:
+          summary: "Нет активных Celery workers"
+          description: "Все Celery workers недоступны более 2 минут"
+

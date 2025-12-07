@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8" />
+    <style>
+        body { font-family: 'DejaVu Sans', sans-serif; margin: 0; padding: 24px; color: #1f2933; }
+        h1, h2, h3 { margin: 0; }
+        .header { display: flex; justify-content: space-between; border-bottom: 2px solid #eee; padding-bottom: 16px; margin-bottom: 24px; }
+        .logo { font-size: 20px; font-weight: bold; text-transform: uppercase; }
+        .meta { font-size: 12px; color: #6b7280; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
+        th, td { border: 1px solid #e5e7eb; padding: 8px; font-size: 12px; }
+        th { background-color: #f3f4f6; text-align: left; }
+        .totals td { border: none; font-size: 14px; }
+        .qr { margin-top: 16px; text-align: right; font-size: 12px; color: #6b7280; }
+        .signatures { display: flex; justify-content: space-between; margin-top: 40px; font-size: 12px; }
+        .signature-box { width: 45%; border-top: 1px solid #9ca3af; padding-top: 8px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div>
+            <div class="logo">{{ company.name }}</div>
+            <div class="meta">
+                {{ company.address }}<br />
+                {{ company.phone }} · {{ company.email }}
+            </div>
+        </div>
+        <div class="meta">
+            Счёт № {{ invoice.number }}<br />
+            Дата: {{ issued_at }}<br />
+            Клиент: {{ client.name }}
+        </div>
+    </div>
+
+    <h3>Детализация</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>Позиция</th>
+                <th>Тип</th>
+                <th>Кол-во</th>
+                <th>Ставка</th>
+                <th>Налог</th>
+                <th>Скидка</th>
+                <th>Итого</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in positions %}
+            <tr>
+                <td>{{ item.name }}</td>
+                <td>{{ item.type }}</td>
+                <td>{{ item.quantity }}</td>
+                <td>{{ item.unit_price }}</td>
+                <td>{{ item.tax_amount }}</td>
+                <td>{{ item.discount }}</td>
+                <td>{{ item.line_total }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <table class="totals">
+        <tr><td>Подытог:</td><td>{{ summary.subtotal }} {{ invoice.currency }}</td></tr>
+        <tr><td>Налоги:</td><td>{{ summary.tax_total }} {{ invoice.currency }}</td></tr>
+        <tr><td>Скидки:</td><td>{{ summary.discount_total }} {{ invoice.currency }}</td></tr>
+        <tr><td><strong>Итого:</strong></td><td><strong>{{ summary.total }} {{ invoice.currency }}</strong></td></tr>
+        <tr><td>Предоплата:</td><td>{{ summary.prepayment }} {{ invoice.currency }}</td></tr>
+        <tr><td>К оплате:</td><td>{{ summary.balance }} {{ invoice.currency }}</td></tr>
+    </table>
+
+    <div class="qr">
+        QR-code: {{ payment_link }}
+    </div>
+
+    <div class="signatures">
+        <div class="signature-box">
+            Исполнитель: ______________________<br/>
+            {{ company.representative }}
+        </div>
+        <div class="signature-box">
+            Клиент: ____________________________<br/>
+            {{ client.contact_person|default:"" }}
+        </div>
+    </div>
+</body>
+</html>
+

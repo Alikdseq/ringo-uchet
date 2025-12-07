@@ -1,0 +1,73 @@
+# Правила алертов для API
+
+groups:
+  - name: api_alerts
+    interval: 30s
+    rules:
+      # Алерт на высокую латентность API
+      - alert: HighAPILatency
+        expr: |
+          histogram_quantile(0.95, 
+            rate(http_request_duration_seconds_bucket[5m])
+          ) > 0.2
+        for: 5m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "Высокая латентность API"
+          description: "95-й перцентиль латентности API превышает 200ms в течение 5 минут. Текущее значение: {{ $value }}s"
+
+      # Алерт на критическую латентность
+      - alert: CriticalAPILatency
+        expr: |
+          histogram_quantile(0.95, 
+            rate(http_request_duration_seconds_bucket[5m])
+          ) > 1.0
+        for: 2m
+        labels:
+          severity: critical
+          component: api
+        annotations:
+          summary: "Критическая латентность API"
+          description: "95-й перцентиль латентности API превышает 1 секунду. Текущее значение: {{ $value }}s"
+
+      # Алерт на высокий процент ошибок
+      - alert: HighErrorRate
+        expr: |
+          rate(http_requests_total{status_code=~"5.."}[5m]) 
+          / 
+          rate(http_requests_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "Высокий процент ошибок API"
+          description: "Процент ошибок 5xx превышает 5% в течение 5 минут. Текущее значение: {{ $value | humanizePercentage }}"
+
+      # Алерт на критический процент ошибок
+      - alert: CriticalErrorRate
+        expr: |
+          rate(http_requests_total{status_code=~"5.."}[5m]) 
+          / 
+          rate(http_requests_total[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: critical
+          component: api
+        annotations:
+          summary: "Критический процент ошибок API"
+          description: "Процент ошибок 5xx превышает 10% в течение 2 минут. Текущее значение: {{ $value | humanizePercentage }}"
+
+      # Алерт на недоступность API
+      - alert: APIDown
+        expr: up{job="django-api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: api
+        annotations:
+          summary: "API недоступен"
+          description: "API сервер {{ $labels.instance }} недоступен более 1 минуты"
+

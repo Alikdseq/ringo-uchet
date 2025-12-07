@@ -1,0 +1,8 @@
+# Зависимости для скриптов тестирования и утилит
+# Установка: pip install -r scripts/requirements.txt
+
+# HTTP клиент для API regression тестов
+httpx>=0.25.0  # Предпочтительно (быстрее, async поддержка)
+# или
+# requests>=2.31.0  # Альтернатива (уже есть в backend/requirements.txt)
+

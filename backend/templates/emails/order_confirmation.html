@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Заказ №{{ number }} подтверждён</title>
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: #2c3e50; color: white; padding: 20px; text-align: center; }
+        .content { background: #f9f9f9; padding: 20px; margin: 20px 0; }
+        .info { background: white; padding: 15px; margin: 10px 0; border-left: 4px solid #3498db; }
+        .footer { text-align: center; color: #666; font-size: 12px; margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Ringo Uchet</h1>
+        </div>
+        <div class="content">
+            <h2>Заказ №{{ number }} подтверждён</h2>
+            <div class="info">
+                <p><strong>Статус:</strong> {{ status }}</p>
+                <p><strong>Сумма:</strong> {{ total_amount }} ₽</p>
+                {% if address %}<p><strong>Адрес:</strong> {{ address }}</p>{% endif %}
+            </div>
+            <p>Ваш заказ принят в обработку. Мы свяжемся с вами в ближайшее время.</p>
+        </div>
+        <div class="footer">
+            <p>Это автоматическое уведомление от системы Ringo Uchet.</p>
+        </div>
+    </div>
+</body>
+</html>
+

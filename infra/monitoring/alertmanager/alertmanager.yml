@@ -1,0 +1,100 @@
+# Alertmanager конфигурация для отправки алертов
+
+global:
+  resolve_timeout: 5m
+  # Slack webhook URL (заполнить в secrets)
+  slack_api_url: '${SLACK_WEBHOOK_URL}'
+  # Telegram bot token и chat ID (заполнить в secrets)
+  telegram_api_url: 'https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage'
+  telegram_chat_id: '${TELEGRAM_CHAT_ID}'
+
+# Шаблоны для уведомлений
+templates:
+  - '/etc/alertmanager/templates/*.tmpl'
+
+# Маршрутизация алертов
+route:
+  receiver: 'default'
+  group_by: ['alertname', 'cluster', 'service']
+  group_wait: 10s
+  group_interval: 10s
+  repeat_interval: 12h
+  routes:
+    # Критические алерты отправляются сразу
+    - match:
+        severity: critical
+      receiver: 'critical-alerts'
+      continue: true
+    
+    # Предупреждения группируются
+    - match:
+        severity: warning
+      receiver: 'warning-alerts'
+      group_wait: 30s
+      repeat_interval: 6h
+
+# Получатели уведомлений
+receivers:
+  - name: 'default'
+    slack_configs:
+      - channel: '#ringo-alerts'
+        title: '{{ .GroupLabels.alertname }}'
+        text: '{{ range .Alerts }}{{ .Annotations.summary }}\n{{ .Annotations.description }}{{ end }}'
+        send_resolved: true
+
+  - name: 'critical-alerts'
+    slack_configs:
+      - channel: '#ringo-alerts-critical'
+        title: '🚨 CRITICAL: {{ .GroupLabels.alertname }}'
+        text: |
+          {{ range .Alerts }}
+          *Alert:* {{ .Labels.alertname }}
+          *Severity:* {{ .Labels.severity }}
+          *Component:* {{ .Labels.component }}
+          *Summary:* {{ .Annotations.summary }}
+          *Description:* {{ .Annotations.description }}
+          *Instance:* {{ .Labels.instance }}
+          {{ end }}
+        send_resolved: true
+        http_config:
+          follow_redirects: true
+    
+    telegram_configs:
+      - bot_token: '${TELEGRAM_BOT_TOKEN}'
+        chat_id: ${TELEGRAM_CHAT_ID}
+        message: |
+          🚨 *CRITICAL ALERT*
+          {{ range .Alerts }}
+          *{{ .Labels.alertname }}*
+          {{ .Annotations.summary }}
+          {{ .Annotations.description }}
+          {{ end }}
+        parse_mode: 'Markdown'
+        disable_notifications: false
+
+  - name: 'warning-alerts'
+    slack_configs:
+      - channel: '#ringo-alerts'
+        title: '⚠️ WARNING: {{ .GroupLabels.alertname }}'
+        text: '{{ range .Alerts }}{{ .Annotations.summary }}\n{{ .Annotations.description }}{{ end }}'
+        send_resolved: true
+
+# Ингибирование (подавление) алертов
+inhibit_rules:
+  # Если сервер недоступен, не отправлять алерты о высоком использовании ресурсов
+  - source_match:
+      severity: 'critical'
+      alertname: 'ServerDown'
+    target_match:
+      severity: 'warning'
+    equal: ['instance']
+  
+  # Если API недоступен, не отправлять алерты о латентности
+  - source_match:
+      severity: 'critical'
+      alertname: 'APIDown'
+    target_match:
+      severity: 'warning'
+      alertname: 'HighAPILatency'
+    equal: ['instance']
+
