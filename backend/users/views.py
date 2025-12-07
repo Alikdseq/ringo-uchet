@@ -6,6 +6,7 @@ from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
+from rest_framework.exceptions import ValidationError
 from rest_framework_simplejwt.views import TokenObtainPairView
 from .serializers import (
     CustomTokenObtainPairSerializer,
@@ -26,7 +27,15 @@ class CustomTokenObtainPairView(TokenObtainPairView):
         """Обработка POST запроса с обработкой ошибок"""
         try:
             return super().post(request, *args, **kwargs)
+        except ValidationError as e:
+            # ValidationError (неверные учетные данные) - возвращаем 401
+            logger.warning(f"Invalid credentials: {e.detail if hasattr(e, 'detail') else e}")
+            return Response(
+                e.detail if hasattr(e, 'detail') else {"detail": "Неверный телефон, email или пароль"},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
         except Exception as e:
+            # Другие ошибки - возвращаем 500 и логируем
             logger.error(f"Error in token obtain: {e}", exc_info=True)
             return Response(
                 {"detail": "Ошибка при получении токена. Проверьте логи сервера."},
