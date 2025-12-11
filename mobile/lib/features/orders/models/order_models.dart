@@ -644,13 +644,18 @@ class OrderRequest {
     }
     
     // Явно конвертируем items в JSON (excludeId=true для создания новых элементов)
-    if (items != null && items!.isNotEmpty) {
-      json['items'] = items!.map((item) => item.toJson(excludeId: true)).toList();
-    } else {
-      // Если items пустой или null, не отправляем поле вообще (или отправляем пустой список)
-      // Django сериализатор принимает пустой список, но лучше явно указать
-      json['items'] = [];
+    // ВАЖНО: отправляем items только если они явно указаны (не null)
+    // Если items = null, не отправляем поле вообще - это означает "не изменять существующие items"
+    // Если items = [], отправляем пустой список - это означает "удалить все items"
+    if (items != null) {
+      if (items!.isNotEmpty) {
+        json['items'] = items!.map((item) => item.toJson(excludeId: true)).toList();
+      } else {
+        // Пустой список означает удаление всех items
+        json['items'] = [];
+      }
     }
+    // Если items == null, не добавляем поле в JSON - это означает "не трогать существующие items"
     
     // Удаляем null значения для опциональных полей
     if (json['geo_lat'] == null) {

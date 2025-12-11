@@ -456,13 +456,41 @@ class OrderSerializer(serializers.ModelSerializer):
                         instance.total_amount = Decimal("0.00")
                         logger.info("Removed all items, setting total to 0")
                 elif total_amount is not None:
-                    # Если явно указана total_amount - используем её (обновление примерной стоимости)
-                    instance.total_amount = Decimal(str(total_amount))
-                    logger.info(f"Setting total_amount explicitly: {total_amount}")
+                    # Если явно указана total_amount БЕЗ изменения items - это обновление общей стоимости
+                    # Если есть существующие items, их стоимость сохраняется, а примерная стоимость пересчитывается
+                    existing_items_total = calculate_order_total(instance) or Decimal("0.00")
+                    new_total = Decimal(str(total_amount))
+                    
+                    if existing_items_total > Decimal("0.00"):
+                        # Есть items - новая total_amount = новая примерная стоимость + стоимость items
+                        # Но пользователь вводит общую стоимость, поэтому примерная = общая - стоимость items
+                        estimated_cost = new_total - existing_items_total
+                        if estimated_cost < Decimal("0.00"):
+                            # Если общая стоимость меньше стоимости items, устанавливаем total = стоимость items
+                            logger.warning(f"Total amount {new_total} is less than items total {existing_items_total}, setting total to items total")
+                            instance.total_amount = existing_items_total
+                        else:
+                            # Новая общая стоимость = новая примерная стоимость + стоимость items
+                            instance.total_amount = new_total
+                            logger.info(f"Updating total_amount to {new_total} (estimated: {estimated_cost} + items: {existing_items_total})")
+                    else:
+                        # Нет items - total_amount = примерная стоимость
+                        instance.total_amount = new_total
+                        logger.info(f"Setting total_amount (estimated cost) to {new_total}")
                 else:
-                    # Если items не изменены и total_amount не указан, пересчитываем из существующих items
-                    instance.total_amount = calculate_order_total(instance)
-                    logger.info(f"Recalculating total from existing items: {instance.total_amount}")
+                    # Если items не изменены и total_amount не указан, пересчитываем из существующих items + примерной стоимости
+                    existing_items_total = calculate_order_total(instance) or Decimal("0.00")
+                    current_total = instance.total_amount
+                    estimated_cost = current_total - existing_items_total
+                    
+                    if estimated_cost > Decimal("0.00"):
+                        # Сохраняем примерную стоимость + стоимость items
+                        instance.total_amount = estimated_cost + existing_items_total
+                        logger.info(f"Recalculating: keeping estimated cost {estimated_cost} + items cost {existing_items_total} = {instance.total_amount}")
+                    else:
+                        # Только стоимость items
+                        instance.total_amount = existing_items_total
+                        logger.info(f"Recalculating total from existing items: {instance.total_amount}")
                 
                 instance.save(update_fields=["total_amount"])
             logger.info(f"Order {instance.id} updated successfully")

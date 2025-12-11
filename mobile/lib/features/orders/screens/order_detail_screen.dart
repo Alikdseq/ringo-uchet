@@ -896,6 +896,37 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
         totalAmount = double.tryParse(_totalAmountController.text.trim());
       }
       
+      // Определяем, были ли изменены items (сравниваем с оригинальными items из заявки)
+      final originalItems = _order!.items ?? [];
+      bool itemsChanged = false;
+      
+      if (_editableItems.length != originalItems.length) {
+        itemsChanged = true;
+      } else {
+        // Сравниваем каждый item по основным полям
+        for (int i = 0; i < _editableItems.length; i++) {
+          final editable = _editableItems[i];
+          final original = originalItems[i];
+          
+          if (editable.id != original.id ||
+              editable.quantity != original.quantity ||
+              editable.unitPrice != original.unitPrice ||
+              editable.itemType != original.itemType ||
+              editable.refId != original.refId) {
+            itemsChanged = true;
+            break;
+          }
+          
+          // Сравниваем metadata (может содержать shifts, hours и т.д.)
+          if (editable.metadata.toString() != original.metadata.toString()) {
+            itemsChanged = true;
+            break;
+          }
+        }
+      }
+      
+      // Отправляем items только если они были изменены
+      // Если items не изменены, отправляем null - это означает "не трогать существующие items"
       final request = OrderRequest(
         address: _addressController.text.trim(),
         startDt: _order!.startDt,
@@ -903,11 +934,24 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
         description: _descriptionController.text.trim(),
         status: _order!.status,
         operatorIds: _selectedOperatorIds.isNotEmpty ? _selectedOperatorIds.toList() : null,
-        items: _editableItems.isNotEmpty ? _editableItems : null,
+        items: itemsChanged ? (_editableItems.isNotEmpty ? _editableItems : []) : null,
         totalAmount: totalAmount,
       );
       
-      await orderService.updateOrder(widget.orderId, request);
+      final updatedOrder = await orderService.updateOrder(widget.orderId, request);
+      
+      // Обновляем локальное состояние сразу после успешного сохранения
+      if (mounted) {
+        setState(() {
+          _order = updatedOrder;
+          _editableItems = updatedOrder.items?.toList() ?? [];
+          // Обновляем контроллер стоимости из обновленной заявки
+          final totalAmount = updatedOrder.totalAmount > 0 ? updatedOrder.totalAmount : 0.0;
+          _totalAmountController.text = totalAmount.toStringAsFixed(2);
+        });
+      }
+      
+      // Перезагружаем заявку для получения актуальных данных
       await _loadOrder();
       
       if (mounted) {
@@ -921,8 +965,11 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
           SnackBar(
             content: Text('Ошибка сохранения: ${e.toString()}'),
             backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
           ),
         );
+        // Перезагружаем заявку даже при ошибке, чтобы показать актуальное состояние
+        await _loadOrder();
       }
     } finally {
       if (mounted) {
