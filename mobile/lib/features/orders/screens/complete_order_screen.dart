@@ -39,6 +39,86 @@ class _CompleteOrderScreenState extends ConsumerState<CompleteOrderScreen> {
     super.initState();
     // Инициализируем контроллеры для зарплаты операторов
     _initializeOperatorControllers();
+    // Загружаем существующие items из заявки
+    _loadExistingItems();
+  }
+  
+  void _loadExistingItems() {
+    // Преобразуем существующие OrderItem в SelectedItem для отображения в форме
+    final existingItems = widget.order.items ?? [];
+    if (existingItems.isNotEmpty) {
+      setState(() {
+        _selectedItems.clear();
+        for (final item in existingItems) {
+          // Извлекаем shifts и hours из metadata для техники
+          double? shifts;
+          double? hours;
+          double? dailyRate;
+          
+          if (item.itemType == OrderItemType.equipment && item.metadata.isNotEmpty) {
+            shifts = (item.metadata['shifts'] as num?)?.toDouble();
+            hours = (item.metadata['hours'] as num?)?.toDouble();
+            dailyRate = (item.metadata['daily_rate'] as num?)?.toDouble();
+            
+            // Если shifts/hours не найдены в metadata, пытаемся рассчитать из quantity
+            // quantity для техники обычно = shifts * 8 + hours
+            if (shifts == null && hours == null && item.quantity > 0) {
+              // Пытаемся восстановить shifts и hours из quantity
+              // Предполагаем, что если quantity кратно 8, то это смены
+              final totalHours = item.quantity;
+              if (totalHours >= 8 && totalHours % 8 == 0) {
+                shifts = totalHours / 8;
+                hours = 0.0;
+              } else {
+                shifts = (totalHours / 8).floorToDouble();
+                hours = totalHours % 8;
+              }
+            }
+          }
+          
+          _selectedItems.add(
+            SelectedItem(
+              itemType: item.itemType,
+              refId: item.refId ?? 0,
+              name: item.nameSnapshot,
+              unitPrice: item.unitPrice,
+              dailyRate: dailyRate ?? (item.itemType == OrderItemType.equipment 
+                  ? _getDailyRateFromItem(item) 
+                  : null),
+              unit: item.unit,
+              quantity: item.quantity,
+              shifts: shifts,
+              hours: hours,
+              fuelExpense: item.fuelExpense,
+              repairExpense: item.repairExpense,
+              metadata: Map<String, dynamic>.from(item.metadata),
+            ),
+          );
+        }
+        _calculateTotal();
+      });
+    }
+  }
+  
+  double? _getDailyRateFromItem(OrderItem item) {
+    // Пытаемся извлечь dailyRate из metadata или рассчитать из стоимости
+    if (item.metadata.containsKey('daily_rate')) {
+      return (item.metadata['daily_rate'] as num?)?.toDouble();
+    }
+    // Если есть shifts и hours, можно попытаться рассчитать
+    final shifts = (item.metadata['shifts'] as num?)?.toDouble() ?? 0.0;
+    final hours = (item.metadata['hours'] as num?)?.toDouble() ?? 0.0;
+    if (shifts > 0) {
+      // Приблизительный расчет: если есть смены, то dailyRate = (общая стоимость - часы * hourlyRate) / смены
+      final hourlyRate = item.unitPrice;
+      final totalCost = item.lineTotal ?? (item.unitPrice * item.quantity);
+      final hoursCost = hours * hourlyRate;
+      final shiftsCost = totalCost - hoursCost;
+      if (shiftsCost > 0 && shifts > 0) {
+        return shiftsCost / shifts;
+      }
+    }
+    return null;
   }
 
   void _initializeOperatorControllers() {

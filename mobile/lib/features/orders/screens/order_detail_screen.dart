@@ -877,7 +877,78 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
       setState(() {
         _editableItems.addAll(result);
       });
-      _saveChanges();
+      // При добавлении items явно отправляем их как измененные
+      // Это гарантирует, что стоимость новых items прибавится к total_amount
+      _saveChangesWithItems();
+    }
+  }
+  
+  Future<void> _saveChangesWithItems() async {
+    if (_order == null || !_isAdmin()) return;
+    
+    setState(() {
+      _isSaving = true;
+    });
+    
+    try {
+      final orderService = ref.read(orderServiceProvider);
+      
+      double? totalAmount;
+      if (_totalAmountController.text.isNotEmpty) {
+        totalAmount = double.tryParse(_totalAmountController.text.trim());
+      }
+      
+      // При добавлении items отправляем их явно (даже если они совпадают с оригинальными)
+      // Это гарантирует, что сервер прибавит стоимость новых items к примерной стоимости
+      final request = OrderRequest(
+        address: _addressController.text.trim(),
+        startDt: _order!.startDt,
+        endDt: _order!.endDt,
+        description: _descriptionController.text.trim(),
+        status: _order!.status,
+        operatorIds: _selectedOperatorIds.isNotEmpty ? _selectedOperatorIds.toList() : null,
+        items: _editableItems.isNotEmpty ? _editableItems : [],
+        totalAmount: totalAmount,
+      );
+      
+      final updatedOrder = await orderService.updateOrder(widget.orderId, request);
+      
+      // Обновляем локальное состояние сразу после успешного сохранения
+      if (mounted) {
+        setState(() {
+          _order = updatedOrder;
+          _editableItems = updatedOrder.items?.toList() ?? [];
+          // Обновляем контроллер стоимости из обновленной заявки
+          final totalAmount = updatedOrder.totalAmount > 0 ? updatedOrder.totalAmount : 0.0;
+          _totalAmountController.text = totalAmount.toStringAsFixed(2);
+        });
+      }
+      
+      // Перезагружаем заявку для получения актуальных данных
+      await _loadOrder();
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Номенклатура добавлена, стоимость обновлена')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Ошибка сохранения: ${e.toString()}'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+        await _loadOrder();
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+        });
+      }
     }
   }
 
