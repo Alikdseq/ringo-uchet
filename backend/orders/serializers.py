@@ -317,29 +317,29 @@ class OrderSerializer(serializers.ModelSerializer):
                 # Для обратной совместимости: если указан operator_id, добавляем его в operators
                 if validated_data.get("operator"):
                     order.operators.add(validated_data["operator"])
-                # Добавляем items если они переданы при создании
-                if items_data:
-                    self._upsert_items(order, items_data)
-                    # Рассчитываем стоимость из items
-                    items_total = calculate_order_total(order)
-                    
-                    # Если была указана примерная стоимость, прибавляем к ней стоимость items
-                    if total_amount is not None:
-                        order.total_amount = Decimal(str(total_amount)) + items_total
-                        logger.info(f"Creating order with base total {total_amount} + items {items_total} = {order.total_amount}")
-                    else:
-                        # Иначе используем только стоимость items
-                        order.total_amount = items_total
-                        logger.info(f"Creating order with items total: {items_total}")
-                elif total_amount is not None:
-                    # Если указана примерная стоимость без items, используем её
-                    order.total_amount = Decimal(str(total_amount))
-                    logger.info(f"Creating order with estimated total: {total_amount}")
+            # Добавляем items если они переданы при создании
+            if items_data and len(items_data) > 0:
+                self._upsert_items(order, items_data)
+                # Рассчитываем стоимость из items
+                items_total = calculate_order_total(order)
+                
+                # Если была указана примерная стоимость, прибавляем к ней стоимость items
+                if total_amount is not None:
+                    order.total_amount = Decimal(str(total_amount)) + items_total
+                    logger.info(f"Creating order with base total {total_amount} + items {items_total} = {order.total_amount}")
                 else:
-                    # По умолчанию 0
-                    order.total_amount = Decimal("0.00")
-                    logger.info("Creating order with default total: 0.00")
-                order.save(update_fields=["total_amount"])
+                    # Иначе используем только стоимость items
+                    order.total_amount = items_total
+                    logger.info(f"Creating order with items total: {items_total}")
+            elif total_amount is not None:
+                # Если указана примерная стоимость без items, используем её
+                order.total_amount = Decimal(str(total_amount))
+                logger.info(f"Creating order with estimated total: {total_amount}")
+            else:
+                # По умолчанию 0
+                order.total_amount = Decimal("0.00")
+                logger.info("Creating order with default total: 0.00")
+            order.save(update_fields=["total_amount"])
             logger.info(f"Order created successfully: {order.id}")
             return order
         except Exception as e:
@@ -403,9 +403,9 @@ class OrderSerializer(serializers.ModelSerializer):
                     instance.operators.set(operators)
                 
                 # Обновляем items если они переданы
-                if items_data is not None:
+                if items_data is not None and len(items_data) > 0:
                     # Сохраняем стоимость существующих items перед удалением
-                    existing_items_total = calculate_order_total(instance)
+                    existing_items_total = calculate_order_total(instance) or Decimal("0.00")
                     
                     # Удаляем старые items
                     instance.items.all().delete()
@@ -414,19 +414,33 @@ class OrderSerializer(serializers.ModelSerializer):
                     self._upsert_items(instance, items_data)
                     
                     # Рассчитываем стоимость новых items
-                    new_items_total = calculate_order_total(instance)
+                    new_items_total = calculate_order_total(instance) or Decimal("0.00")
                     
-                    # Если была примерная стоимость (current_total > existing_items_total),
-                    # прибавляем стоимость новых items к примерной стоимости
-                    # Иначе просто используем стоимость всех items
-                    if current_total > existing_items_total:
-                        # Была примерная стоимость - прибавляем стоимость новых items
-                        instance.total_amount = current_total + new_items_total
-                        logger.info(f"Adding new items cost {new_items_total} to base total {current_total} = {instance.total_amount}")
+                    # Определяем примерную стоимость (базовая стоимость без items)
+                    # Если текущая total_amount больше суммы существующих items, значит есть примерная стоимость
+                    estimated_cost = current_total - existing_items_total
+                    
+                    if estimated_cost > Decimal("0.00"):
+                        # Была примерная стоимость - прибавляем стоимость новых items к примерной стоимости
+                        instance.total_amount = estimated_cost + new_items_total
+                        logger.info(f"Adding new items cost {new_items_total} to estimated cost {estimated_cost} = {instance.total_amount}")
                     else:
                         # Не было примерной стоимости - используем стоимость всех items
                         instance.total_amount = new_items_total
                         logger.info(f"Recalculating total from items: {new_items_total}")
+                elif items_data is not None and len(items_data) == 0:
+                    # Если передан пустой список items - удаляем все items, но сохраняем примерную стоимость
+                    existing_items_total = calculate_order_total(instance) or Decimal("0.00")
+                    instance.items.all().delete()
+                    
+                    # Сохраняем примерную стоимость, если она была
+                    estimated_cost = current_total - existing_items_total
+                    if estimated_cost > Decimal("0.00"):
+                        instance.total_amount = estimated_cost
+                        logger.info(f"Removed all items, keeping estimated cost: {estimated_cost}")
+                    else:
+                        instance.total_amount = Decimal("0.00")
+                        logger.info("Removed all items, setting total to 0")
                 elif total_amount is not None:
                     # Если явно указана total_amount - используем её (обновление примерной стоимости)
                     instance.total_amount = Decimal(str(total_amount))
