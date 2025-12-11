@@ -396,9 +396,10 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
             Padding(
               padding: const EdgeInsets.all(16),
               child: Text(
-                'Номенклатура не выбрана',
+                'Номенклатура не выбрана (необязательно)',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: Colors.grey[600],
+                      fontStyle: FontStyle.italic,
                     ),
               ),
             )
