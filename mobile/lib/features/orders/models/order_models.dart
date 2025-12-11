@@ -685,7 +685,7 @@ class OrderRequest {
     
     // Обрабатываем total_amount - отправляем как строку с фиксированной точностью для DecimalField
     if (totalAmount != null) {
-      json['total_amount'] = totalAmount.toStringAsFixed(2);
+      json['total_amount'] = totalAmount!.toStringAsFixed(2);
     } else {
       json.remove('total_amount');
     }
