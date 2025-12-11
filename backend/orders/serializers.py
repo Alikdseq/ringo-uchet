@@ -172,7 +172,7 @@ class OrderItemSerializer(serializers.ModelSerializer):
     ]
 )
 class OrderSerializer(serializers.ModelSerializer):
-    items = OrderItemSerializer(many=True, required=False)  # Теперь можно передавать при создании
+    items = OrderItemSerializer(many=True, required=False, allow_null=True, allow_empty=True)  # Теперь можно передавать при создании
     number = serializers.CharField(required=False, allow_blank=True, max_length=32)
     client_id = serializers.PrimaryKeyRelatedField(
         queryset=Client.objects.all(), source="client", write_only=True, allow_null=True
@@ -277,9 +277,11 @@ class OrderSerializer(serializers.ModelSerializer):
         return value
 
     def validate_items(self, value):
-        # Если items не переданы или пустой список, возвращаем как есть (необязательное поле)
-        if value is None or len(value) == 0:
-            return value
+        # Если items не переданы, None или пустой список, возвращаем None (необязательное поле)
+        if value is None:
+            return None
+        if isinstance(value, list) and len(value) == 0:
+            return None  # Пустой список означает "нет items"
         # Валидируем только если есть элементы
         for item in value:
             if item["item_type"] == OrderItem.ItemType.EQUIPMENT and item.get("ref_id"):
