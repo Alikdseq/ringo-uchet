@@ -339,6 +339,12 @@ class Order {
       processedJson['items'] = itemsList;
     }
     
+    // Обрабатываем статус DELETED (больше не поддерживается, но могут быть старые записи)
+    if (processedJson['status'] == 'DELETED') {
+      // Заменяем DELETED на CANCELLED для обратной совместимости
+      processedJson['status'] = 'CANCELLED';
+    }
+    
     // Используем стандартный парсинг с обработанными данными
     try {
       return _$OrderFromJson(processedJson);
@@ -348,7 +354,15 @@ class Order {
       print('Stack trace: $stackTrace');
       print('Processed JSON keys: ${processedJson.keys.toList()}');
       print('Processed JSON: $processedJson');
-      // Пробуем создать Order с минимальными данными
+      // Если ошибка связана со статусом, пробуем заменить на CANCELLED
+      if (e.toString().contains('DELETED') || e.toString().contains('status')) {
+        processedJson['status'] = 'CANCELLED';
+        try {
+          return _$OrderFromJson(processedJson);
+        } catch (_) {
+          rethrow;
+        }
+      }
       rethrow;
     }
   }

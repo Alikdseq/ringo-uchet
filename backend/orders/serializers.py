@@ -277,6 +277,10 @@ class OrderSerializer(serializers.ModelSerializer):
         return value
 
     def validate_items(self, value):
+        # Если items не переданы или пустой список, возвращаем как есть (необязательное поле)
+        if value is None or len(value) == 0:
+            return value
+        # Валидируем только если есть элементы
         for item in value:
             if item["item_type"] == OrderItem.ItemType.EQUIPMENT and item.get("ref_id"):
                 if not Equipment.objects.filter(id=item["ref_id"]).exists():

@@ -52,8 +52,10 @@ class ServiceItemSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         """Валидация данных при создании/обновлении услуги"""
         # Проверяем, что category_id указан при создании
-        if self.instance is None and 'category' not in attrs:
-            raise serializers.ValidationError({"category_id": "Категория обязательна для указания"})
+        if self.instance is None:
+            # При создании category обязательна (через category_id)
+            if 'category' not in attrs and 'category_id' not in self.initial_data:
+                raise serializers.ValidationError({"category_id": "Категория обязательна для указания"})
         return attrs
 
 

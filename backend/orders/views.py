@@ -123,9 +123,9 @@ class OrderViewSet(viewsets.ModelViewSet):
                 # Остальные не видят ничего
                 qs = qs.none()
 
-        # Исключаем удаленные заявки для не-админов
-        if user.role not in ["admin", "manager"] and not user.is_superuser:
-            # Удаленные заявки больше не существуют в БД, фильтрация не нужна
+        # Исключаем заявки со статусом DELETED (если они еще есть в БД)
+        # DELETED статус больше не поддерживается, но могут быть старые записи
+        qs = qs.exclude(status="DELETED")
         
         status_param = self.request.query_params.get("status")
         if status_param:
