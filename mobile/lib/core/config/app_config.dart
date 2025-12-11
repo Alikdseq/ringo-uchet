@@ -46,7 +46,7 @@ class AppConfig {
 
   static AppConfig get prod => const AppConfig(
         flavor: AppFlavor.prod,
-        apiBaseUrl: 'https://api.ringo.prod',
+        apiBaseUrl: 'https://ringoouchet.ru',
         apiVersion: 'v1',
         enableLogging: false,
         enableCrashlytics: true,
@@ -56,4 +56,3 @@ class AppConfig {
 
   String get apiUrl => '$apiBaseUrl/api/$apiVersion';
 }
-

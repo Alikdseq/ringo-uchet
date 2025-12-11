@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../storage/local_storage.dart';
+import '../storage/indexed_db_storage.dart';
 
 // Условный импорт для sqflite (не работает на web)
 import 'package:sqflite/sqflite.dart' if (dart.library.html) 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -83,15 +84,44 @@ class OfflineQueueItem {
 /// Сервис для управления оффлайн очередью
 class OfflineQueueService {
   final Ref _ref;
+  IndexedDbStorage? _indexedDb;
+  bool _indexedDbInitialized = false;
+  int _nextId = 1;
 
-  OfflineQueueService(this._ref);
+  OfflineQueueService(this._ref) {
+    if (kIsWeb) {
+      _initIndexedDb();
+    }
+  }
+
+  /// Инициализация IndexedDB для web
+  Future<void> _initIndexedDb() async {
+    if (!kIsWeb || _indexedDbInitialized) return;
+    try {
+      _indexedDb = IndexedDbStorage();
+      await _indexedDb!.init();
+      // Загружаем последний ID
+      final lastId = await _indexedDb!.get('_queue_last_id') as int?;
+      _nextId = (lastId ?? 0) + 1;
+      _indexedDbInitialized = true;
+    } catch (e) {
+      // IndexedDB недоступен
+    }
+  }
 
   /// Получить базу данных
   Future<dynamic> _getDatabase() async {
-    // На web используем заглушку, так как sqflite не работает
+    // На web используем IndexedDB
     if (kIsWeb) {
-      throw UnsupportedError('SQLite не поддерживается на web платформе. Используйте Android эмулятор для полной функциональности.');
+      if (!_indexedDbInitialized) {
+        await _initIndexedDb();
+      }
+      if (_indexedDb == null) {
+        throw UnsupportedError('IndexedDB не доступен на этой платформе');
+      }
+      return _indexedDb;
     }
+    // На мобильных платформах используем SQLite
     final db = await _ref.read(sqliteProvider.future);
     return db;
   }
@@ -103,7 +133,6 @@ class OfflineQueueService {
     required String method,
     required Map<String, dynamic> data,
   }) async {
-    final db = await _getDatabase();
     final item = OfflineQueueItem(
       action: action,
       endpoint: endpoint,
@@ -112,6 +141,16 @@ class OfflineQueueService {
       createdAt: DateTime.now(),
     );
 
+    if (kIsWeb && _indexedDbInitialized && _indexedDb != null) {
+      // Используем IndexedDB для web
+      final id = _nextId++;
+      await _indexedDb!.put('_queue_last_id', _nextId);
+      await _indexedDb!.put('queue_$id', item.toJson());
+      return id;
+    }
+
+    // Используем SQLite для мобильных платформ
+    final db = await _getDatabase();
     return await db.insert(
       'offline_queue',
       {
@@ -127,6 +166,33 @@ class OfflineQueueService {
 
   /// Получить все элементы очереди
   Future<List<OfflineQueueItem>> getQueueItems() async {
+    if (kIsWeb && _indexedDbInitialized && _indexedDb != null) {
+      // Используем IndexedDB для web
+      final items = <OfflineQueueItem>[];
+      try {
+        // Получаем все ключи, начинающиеся с 'queue_'
+        // Note: IndexedDB не поддерживает прямые запросы по префиксу,
+        // поэтому используем localStorage как fallback или храним список ID
+        final lastId = await _indexedDb!.get('_queue_last_id') as int? ?? 0;
+        for (int i = 1; i <= lastId; i++) {
+          final data = await _indexedDb!.get('queue_$i');
+          if (data != null) {
+            try {
+              items.add(OfflineQueueItem.fromJson(data as Map<String, dynamic>));
+            } catch (e) {
+              // Пропускаем поврежденные записи
+            }
+          }
+        }
+        // Сортируем по времени создания
+        items.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+        return items;
+      } catch (e) {
+        return [];
+      }
+    }
+
+    // Используем SQLite для мобильных платформ
     final db = await _getDatabase();
     final results = await db.query(
       'offline_queue',
@@ -152,6 +218,13 @@ class OfflineQueueService {
 
   /// Удалить элемент из очереди
   Future<void> removeFromQueue(int id) async {
+    if (kIsWeb && _indexedDbInitialized && _indexedDb != null) {
+      // Используем IndexedDB для web
+      await _indexedDb!.delete('queue_$id');
+      return;
+    }
+
+    // Используем SQLite для мобильных платформ
     final db = await _getDatabase();
     await db.delete(
       'offline_queue',
@@ -182,7 +255,18 @@ class OfflineQueueService {
 
   /// Получить количество элементов в очереди
   Future<int> getQueueCount() async {
-    if (kIsWeb) return 0; // На web всегда 0
+    if (kIsWeb && _indexedDbInitialized && _indexedDb != null) {
+      // Используем IndexedDB для web
+      try {
+        final items = await getQueueItems();
+        return items.length;
+      } catch (e) {
+        return 0;
+      }
+    }
+    
+    if (kIsWeb) return 0; // На web без IndexedDB всегда 0
+    
     try {
       final db = await _getDatabase();
       final result = await db.rawQuery('SELECT COUNT(*) as count FROM offline_queue');

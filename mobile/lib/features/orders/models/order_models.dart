@@ -17,6 +17,8 @@ enum OrderStatus {
   completed,
   @JsonValue('CANCELLED')
   cancelled,
+  @JsonValue('DELETED')
+  deleted,
 }
 
 /// Тип позиции заказа
@@ -590,6 +592,8 @@ class OrderRequest {
     final List<int>? operatorIds;  // Список ID операторов
     @JsonKey(name: 'prepayment_amount')
     final double? prepaymentAmount;
+    @JsonKey(name: 'total_amount')
+    final double? totalAmount;
     final List<OrderItem>? items;
 
     const OrderRequest({
@@ -606,6 +610,7 @@ class OrderRequest {
     this.operatorId,
     this.operatorIds,
     this.prepaymentAmount,
+    this.totalAmount,
     this.items,
   });
 
@@ -676,6 +681,13 @@ class OrderRequest {
     // Убеждаемся, что description не null (может быть пустой строкой)
     if (json['description'] == null) {
       json['description'] = '';
+    }
+    
+    // Обрабатываем total_amount - отправляем как строку с фиксированной точностью для DecimalField
+    if (totalAmount != null) {
+      json['total_amount'] = totalAmount.toStringAsFixed(2);
+    } else {
+      json.remove('total_amount');
     }
     
     return json;

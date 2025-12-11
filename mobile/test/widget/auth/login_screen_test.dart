@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../lib/features/auth/screens/login_screen.dart';
-import '../../../lib/features/auth/providers/auth_providers.dart';
-import '../../../lib/core/config/app_config.dart';
-import '../../../lib/core/network/dio_client.dart';
-import '../../../lib/core/storage/secure_storage.dart';
-import '../../../lib/features/auth/services/auth_service.dart';
+import 'package:ringo_mobile/features/auth/screens/login_screen.dart';
+import 'package:ringo_mobile/features/auth/providers/auth_providers.dart';
+import 'package:ringo_mobile/core/config/app_config.dart';
+import 'package:ringo_mobile/core/network/dio_client.dart';
+import 'package:ringo_mobile/core/storage/secure_storage.dart';
+import 'package:ringo_mobile/features/auth/services/auth_service.dart';
 import '../../helpers/test_helpers.dart';
 
 void main() {
@@ -21,13 +21,14 @@ void main() {
       container.dispose();
     });
 
-    testWidgets('отображает поля для ввода телефона и пароля', (WidgetTester tester) async {
+    testWidgets('отображает поля для ввода телефона и пароля',
+        (WidgetTester tester) async {
       // Arrange & Act
       await tester.pumpWidget(
         ProviderScope(
           parent: container,
-          child: MaterialApp(
-            home: const LoginScreen(),
+          child: const MaterialApp(
+            home: LoginScreen(),
           ),
         ),
       );
@@ -39,13 +40,14 @@ void main() {
       expect(find.text('Пароль'), findsOneWidget);
     });
 
-    testWidgets('показывает ошибку при пустом пароле', (WidgetTester tester) async {
+    testWidgets('показывает ошибку при пустом пароле',
+        (WidgetTester tester) async {
       // Arrange
       await tester.pumpWidget(
         ProviderScope(
           parent: container,
-          child: MaterialApp(
-            home: const LoginScreen(),
+          child: const MaterialApp(
+            home: LoginScreen(),
           ),
         ),
       );
@@ -61,13 +63,14 @@ void main() {
       expect(find.text('Введите пароль'), findsOneWidget);
     });
 
-    testWidgets('переключается между режимами пароль/OTP', (WidgetTester tester) async {
+    testWidgets('переключается между режимами пароль/OTP',
+        (WidgetTester tester) async {
       // Arrange
       await tester.pumpWidget(
         ProviderScope(
           parent: container,
-          child: MaterialApp(
-            home: const LoginScreen(),
+          child: const MaterialApp(
+            home: LoginScreen(),
           ),
         ),
       );
@@ -82,4 +85,3 @@ void main() {
     });
   });
 }
-

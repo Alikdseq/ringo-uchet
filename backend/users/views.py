@@ -6,7 +6,7 @@ from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import ValidationError, AuthenticationFailed, APIException
 from rest_framework_simplejwt.views import TokenObtainPairView
 from .serializers import (
     CustomTokenObtainPairSerializer,
@@ -29,14 +29,31 @@ class CustomTokenObtainPairView(TokenObtainPairView):
             return super().post(request, *args, **kwargs)
         except ValidationError as e:
             # ValidationError (неверные учетные данные) - возвращаем 401
-            logger.warning(f"Invalid credentials: {e.detail if hasattr(e, 'detail') else e}")
+            error_detail = e.detail if hasattr(e, 'detail') else {"detail": "Неверный телефон, email или пароль"}
+            logger.warning(f"Invalid credentials: {error_detail}")
             return Response(
-                e.detail if hasattr(e, 'detail') else {"detail": "Неверный телефон, email или пароль"},
+                error_detail,
                 status=status.HTTP_401_UNAUTHORIZED
             )
+        except AuthenticationFailed as e:
+            # AuthenticationFailed (от SimpleJWT) - возвращаем 401
+            error_detail = e.detail if hasattr(e, 'detail') else {"detail": "Неверный телефон, email или пароль"}
+            logger.warning(f"Authentication failed: {error_detail}")
+            return Response(
+                error_detail,
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+        except APIException as e:
+            # Другие API исключения - возвращаем их статус код
+            error_detail = e.detail if hasattr(e, 'detail') else {"detail": str(e)}
+            logger.warning(f"API exception in token obtain: {error_detail}")
+            return Response(
+                error_detail,
+                status=e.status_code
+            )
         except Exception as e:
-            # Другие ошибки - возвращаем 500 и логируем
-            logger.error(f"Error in token obtain: {e}", exc_info=True)
+            # Неожиданные ошибки - возвращаем 500 и логируем
+            logger.error(f"Unexpected error in token obtain: {e}", exc_info=True)
             return Response(
                 {"detail": "Ошибка при получении токена. Проверьте логи сервера."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR

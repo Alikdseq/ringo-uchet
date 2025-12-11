@@ -1,63 +1,9 @@
 version: '3.8'
 
 services:
-  db:
-    image: postgres:15-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-ringo_prod}
-      POSTGRES_USER: ${POSTGRES_USER:-ringo_user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    networks:
-      - ringo-net
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ringo_user}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  redis:
-    image: redis:7-alpine
-    restart: unless-stopped
-    volumes:
-      - redis_data:/data
-    networks:
-      - ringo-net
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  minio:
-    image: minio/minio:latest
-    restart: unless-stopped
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-    volumes:
-      - minio_data:/data
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-    networks:
-      - ringo-net
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 30s
-      timeout: 20s
-      retries: 3
-
   api:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ${DOCKER_REGISTRY:-ghcr.io}/${IMAGE_NAME:-ringo-backend}:${IMAGE_TAG:-latest}
     restart: unless-stopped
-    env_file:
-      - .env
     environment:
       - DJANGO_SETTINGS_MODULE=ringo_backend.settings.prod
       - POSTGRES_HOST=${DB_HOST}
@@ -73,65 +19,110 @@ services:
       - AWS_BUCKET=${AWS_BUCKET}
       - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}
       - DJANGO_ALLOWED_HOSTS=ringoouchet.ru,www.ringoouchet.ru,91.229.90.72
-      - CSRF_TRUSTED_ORIGINS=http://ringoouchet.ru,http://www.ringoouchet.ru,http://91.229.90.72
+      - CSRF_TRUSTED_ORIGINS=https://ringoouchet.ru,https://www.ringoouchet.ru,http://ringoouchet.ru,http://www.ringoouchet.ru,http://91.229.90.72
+      - CORS_ALLOW_ALL_ORIGINS=true
       - ALLOWED_HOSTS=${ALLOWED_HOSTS:-*}
-    command: gunicorn ringo_backend.wsgi:application --bind 0.0.0.0:8000 --workers 2 --timeout 120 --access-logfile - --error-logfile -
-    volumes:
-      - ./staticfiles:/app/staticfiles
-      - ./media:/app/media
-    ports:
-      - "8001:8000"
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
+    command: gunicorn ringo_backend.wsgi:application --bind 0.0.0.0:8000 --workers 4 --timeout 120 --access-logfile - --error-logfile -
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     networks:
       - ringo-net
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
 
   celery-worker:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ${DOCKER_REGISTRY:-ghcr.io}/${IMAGE_NAME:-ringo-backend}:${IMAGE_TAG:-latest}
     restart: unless-stopped
-    env_file:
-      - .env
     environment:
       - DJANGO_SETTINGS_MODULE=ringo_backend.settings.prod
-    command: celery -A ringo_backend worker --loglevel=info --concurrency=2
-    volumes:
-      - .:/app
-    depends_on:
-      - api
-      - redis
+      - POSTGRES_HOST=${DB_HOST}
+      - POSTGRES_PORT=${DB_PORT}
+      - POSTGRES_DB=${DB_NAME}
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND}
+      - AWS_S3_ENDPOINT_URL=${AWS_S3_ENDPOINT_URL}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_BUCKET=${AWS_BUCKET}
+      - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}
+      - CELERY_WORKER_CONCURRENCY=${CELERY_WORKER_CONCURRENCY:-4}
+      - CELERY_WORKER_MAX_TASKS_PER_CHILD=${CELERY_WORKER_MAX_TASKS_PER_CHILD:-1000}
+      - CELERY_WORKER_AUTOSCALER=${CELERY_WORKER_AUTOSCALER:-true}
+      - CELERY_WORKER_AUTOSCALER_MIN=${CELERY_WORKER_AUTOSCALER_MIN:-2}
+      - CELERY_WORKER_AUTOSCALER_MAX=${CELERY_WORKER_AUTOSCALER_MAX:-10}
+    command: >
+      celery -A ringo_backend worker
+      --loglevel=info
+      --concurrency=${CELERY_WORKER_CONCURRENCY:-4}
+      --max-tasks-per-child=${CELERY_WORKER_MAX_TASKS_PER_CHILD:-1000}
+      --autoscale=${CELERY_WORKER_AUTOSCALER_MAX:-10},${CELERY_WORKER_AUTOSCALER_MIN:-2}
+      --queues=default,finance,notifications,orders
+    healthcheck:
+      test: ["CMD", "celery", "-A", "ringo_backend", "inspect", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     networks:
       - ringo-net
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
 
   celery-beat:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ${DOCKER_REGISTRY:-ghcr.io}/${IMAGE_NAME:-ringo-backend}:${IMAGE_TAG:-latest}
     restart: unless-stopped
-    env_file:
-      - .env
     environment:
       - DJANGO_SETTINGS_MODULE=ringo_backend.settings.prod
+      - POSTGRES_HOST=${DB_HOST}
+      - POSTGRES_PORT=${DB_PORT}
+      - POSTGRES_DB=${DB_NAME}
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND}
+      - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}
     command: celery -A ringo_backend beat --loglevel=info
-    volumes:
-      - .:/app
-    depends_on:
-      - api
-      - redis
+    healthcheck:
+      test: ["CMD", "ps", "aux", "|", "grep", "celery.*beat"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     networks:
       - ringo-net
-
-volumes:
-  postgres_data:
-  redis_data:
-  minio_data:
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
 
 networks:
   ringo-net:
     driver: bridge
+

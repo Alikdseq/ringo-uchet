@@ -1,6 +1,4 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
 import '../models/order_models.dart';
 
 /// Диалог смены статуса заказа
@@ -22,8 +20,6 @@ class _ChangeStatusDialogState extends State<ChangeStatusDialog> {
   final _commentController = TextEditingController();
   final _operatorSalaryController = TextEditingController();
   final _fuelExpenseController = TextEditingController();
-  String? _photoPath;
-  final _imagePicker = ImagePicker();
 
   @override
   void dispose() {
@@ -31,23 +27,6 @@ class _ChangeStatusDialogState extends State<ChangeStatusDialog> {
     _operatorSalaryController.dispose();
     _fuelExpenseController.dispose();
     super.dispose();
-  }
-
-  Future<void> _pickPhoto() async {
-    try {
-      final image = await _imagePicker.pickImage(source: ImageSource.camera);
-      if (image != null) {
-        setState(() {
-          _photoPath = image.path;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Ошибка выбора фото: $e')),
-        );
-      }
-    }
   }
 
   @override
@@ -101,19 +80,6 @@ class _ChangeStatusDialogState extends State<ChangeStatusDialog> {
                 keyboardType: TextInputType.numberWithOptions(decimal: true),
               ),
             ],
-            const SizedBox(height: 16),
-            if (_photoPath != null)
-              Image.file(
-                File(_photoPath!),
-                height: 100,
-                fit: BoxFit.cover,
-              )
-            else
-              OutlinedButton.icon(
-                onPressed: _pickPhoto,
-                icon: const Icon(Icons.camera_alt),
-                label: const Text('Добавить фото'),
-              ),
           ],
         ),
       ),
@@ -142,7 +108,6 @@ class _ChangeStatusDialogState extends State<ChangeStatusDialog> {
               OrderStatusRequest(
                 status: widget.newStatus,
                 comment: _commentController.text,
-                attachmentUrl: _photoPath, // TODO: Загрузить фото и получить URL
                 operatorSalary: operatorSalary,
                 fuelExpense: fuelExpense,
               ),
@@ -168,6 +133,8 @@ class _ChangeStatusDialogState extends State<ChangeStatusDialog> {
         return 'Завершён';
       case OrderStatus.cancelled:
         return 'Отменён';
+      case OrderStatus.deleted:
+        return 'Удалён';
     }
   }
 }

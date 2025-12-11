@@ -21,6 +21,8 @@ class AuthInterceptor extends Interceptor {
     }
 
     final storage = ref.read(secureStorageProvider);
+    // Всегда читаем свежий токен из хранилища перед каждым запросом
+    // Это гарантирует что используется актуальный токен
     final token = await storage.getAccessToken();
 
     if (token != null) {

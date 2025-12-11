@@ -9,6 +9,7 @@ class StatusColors {
   static const Color inProgress = Color(0xFF00BCD4); // Бирюзовый
   static const Color completed = Color(0xFF4CAF50); // Зелёный
   static const Color cancelled = Color(0xFFF44336); // Красный
+  static const Color deleted = Color(0xFF616161); // Тёмно-серый
 
   // Статусы оплаты
   static const Color paymentPending = Color(0xFFFF9800);
@@ -37,6 +38,8 @@ class StatusColors {
         return completed;
       case 'CANCELLED':
         return cancelled;
+      case 'DELETED':
+        return deleted;
       default:
         return draft;
     }

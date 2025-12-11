@@ -21,6 +21,7 @@ import 'features/orders/screens/offline_queue_screen.dart';
 import 'features/notifications/screens/notification_settings_screen.dart';
 import 'features/notifications/services/notification_service.dart';
 import 'shared/widgets/screen_wrapper.dart';
+import 'core/providers/navigation_provider.dart';
 
 // Глобальный ключ для навигации (для deep links)
 final navigatorKey = GlobalKey<NavigatorState>();
@@ -191,14 +192,12 @@ class _HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<_HomeScreen> {
-  int _currentIndex = 0;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   int _ordersRefreshKey = 0; // Ключ для принудительного обновления OrdersListScreen
 
-  void setCurrentIndex(int index) {
-    setState(() {
-      _currentIndex = index;
-    });
+  @override
+  void initState() {
+    super.initState();
   }
 
 
@@ -209,6 +208,9 @@ class _HomeScreenState extends ConsumerState<_HomeScreen> {
     final userRole = user?.role ?? 'user';
     final isAdmin = userRole == 'admin';
     final isOperator = userRole == 'operator';
+    
+    // Используем провайдер для управления индексом навигации
+    final currentIndex = ref.watch(navigationIndexProvider);
     
     // Определяем доступные вкладки в зависимости от роли
     final availableIndices = <int>[];
@@ -286,7 +288,7 @@ class _HomeScreenState extends ConsumerState<_HomeScreen> {
     availableDrawerItems.add(_buildDrawerItem(context, icon: Icons.person, title: 'Профиль', index: profileIndex));
     
     // Нормализуем текущий индекс
-    int normalizedIndex = _currentIndex;
+    int normalizedIndex = currentIndex;
     if (normalizedIndex >= availableIndices.length) {
       normalizedIndex = 0;
     }
@@ -410,14 +412,14 @@ class _HomeScreenState extends ConsumerState<_HomeScreen> {
       ),
       body: IndexedStack(
         index: normalizedIndex,
+        // Lazy loading: загружаем экраны только когда они нужны
+        // IndexedStack уже реализует lazy loading - виджеты создаются только при первом обращении
         children: availableScreens,
       ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: normalizedIndex,
         onTap: (index) {
-          setState(() {
-            _currentIndex = index;
-          });
+          ref.read(navigationIndexProvider.notifier).setIndex(index);
           // Закрываем drawer, если открыт
           if (_scaffoldKey.currentState?.isDrawerOpen ?? false) {
             Navigator.pop(context);
@@ -451,7 +453,8 @@ class _HomeScreenState extends ConsumerState<_HomeScreen> {
   }
 
   Widget _buildDrawerItem(BuildContext context, {required IconData icon, required String title, required int index}) {
-    final isSelected = _currentIndex == index;
+    final currentIndex = ref.watch(navigationIndexProvider);
+    final isSelected = currentIndex == index;
     return ListTile(
       leading: Icon(icon, color: isSelected ? Theme.of(context).primaryColor : null),
       title: Text(
@@ -463,9 +466,7 @@ class _HomeScreenState extends ConsumerState<_HomeScreen> {
       ),
       selected: isSelected,
       onTap: () {
-        setState(() {
-          _currentIndex = index;
-        });
+        ref.read(navigationIndexProvider.notifier).setIndex(index);
         Navigator.pop(context);
       },
     );
