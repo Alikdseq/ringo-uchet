@@ -1065,7 +1065,6 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
         return 'Завершён';
       case OrderStatus.cancelled:
         return 'Отменён';
-        return 'Удалён';
     }
   }
   
