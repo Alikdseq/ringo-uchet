@@ -374,6 +374,23 @@ class OrderSerializer(serializers.ModelSerializer):
             # Сохраняем текущую стоимость как базу для расчета
             current_total = instance.total_amount or Decimal("0.00")
             
+            # Защищаем поле number от изменения при обновлении (нельзя изменить или очистить)
+            # Если передана пустая строка или None, игнорируем её
+            if "number" in validated_data:
+                number_value = validated_data.get("number", "").strip() if validated_data.get("number") else None
+                if not number_value:
+                    # Если передана пустая строка, удаляем из validated_data чтобы не перезаписать существующий номер
+                    validated_data.pop("number")
+                    logger.info(f"Empty number field ignored, keeping existing number: {instance.number}")
+                elif number_value == instance.number:
+                    # Если номер не изменился, удаляем из validated_data
+                    validated_data.pop("number")
+                else:
+                    # Если номер изменился, проверяем уникальность
+                    if Order.objects.filter(number=number_value).exclude(id=instance.id).exists():
+                        logger.warning(f"Order number {number_value} already exists, ignoring change")
+                        validated_data.pop("number")
+            
             # Обновляем обычные поля
             for attr, value in validated_data.items():
                 setattr(instance, attr, value)
