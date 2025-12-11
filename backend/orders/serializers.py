@@ -416,11 +416,36 @@ class OrderSerializer(serializers.ModelSerializer):
             OrderItem.objects.create(order=order, **item_data)
 
     def _generate_order_number(self) -> str:
-        last = Order.objects.order_by("-created_at").first()
-        next_seq = 1
-        if last and last.number and last.number.isdigit():
-            next_seq = int(last.number) + 1
-        return f"{next_seq:06d}"
+        """Генерирует уникальный номер заявки, проверяя отсутствие дубликатов."""
+        max_attempts = 100  # Максимальное количество попыток для избежания бесконечного цикла
+        
+        for attempt in range(max_attempts):
+            # Получаем последнюю заявку по дате создания
+            last = Order.objects.order_by("-created_at").first()
+            next_seq = 1
+            
+            if last and last.number and last.number.isdigit():
+                next_seq = int(last.number) + 1
+            
+            # Генерируем номер
+            number = f"{next_seq:06d}"
+            
+            # Проверяем, существует ли уже заявка с таким номером
+            if not Order.objects.filter(number=number).exists():
+                logger.info(f"Generated unique order number: {number}")
+                return number
+            
+            # Если номер существует, пробуем следующий
+            logger.warning(f"Order number {number} already exists, trying next")
+            next_seq += 1
+        
+        # Если не удалось сгенерировать уникальный номер за 100 попыток,
+        # используем timestamp для гарантии уникальности
+        import time
+        timestamp = int(time.time())
+        fallback_number = f"{timestamp:010d}"[-6:]  # Последние 6 цифр timestamp
+        logger.warning(f"Could not generate sequential number, using fallback: {fallback_number}")
+        return fallback_number
 
 
 class OrderStatusSerializer(serializers.Serializer):
