@@ -236,10 +236,9 @@ def equipment_report(date_from: Optional[str], date_to: Optional[str]) -> list[d
     """Отчет по технике с правильным расчетом часов работы из start_dt и end_dt заказов."""
     # Фильтруем только заявки, которые не отменены (удаленные заявки автоматически исключены через CASCADE)
     items = filter_range(
-        OrderItem.objects.filter(
-            item_type=OrderItem.ItemType.EQUIPMENT,
-            order__status__ne=OrderStatus.CANCELLED
-        ).select_related("order"),
+        OrderItem.objects.filter(item_type=OrderItem.ItemType.EQUIPMENT)
+        .exclude(order__status=OrderStatus.CANCELLED)
+        .select_related("order"),
         "order__start_dt",
         date_from,
         date_to,
