@@ -441,7 +441,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                 if (item.lineTotal != null && item.lineTotal! > 0) {
                   // Используем значение с сервера - это правильный расчет с учетом смен и часов
                   calculatedTotal = item.lineTotal!.toDouble();
-                } else if (item.itemType == 'equipment') {
+                } else if (item.itemType == OrderItemType.equipment) {
                   // Для техники рассчитываем: смены * daily_rate + часы * hourly_rate
                   final metadata = item.metadata;
                   final shifts = (metadata['shifts'] as num?)?.toDouble() ?? 0.0;

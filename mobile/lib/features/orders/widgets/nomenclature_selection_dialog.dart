@@ -169,15 +169,11 @@ class _NomenclatureSelectionDialogState extends ConsumerState<NomenclatureSelect
             final item = equipment[index];
             return ListTile(
               title: Text(item.name),
-              subtitle: Text('${item.code} • ${item.hourlyRate} ₽/час'),
+              subtitle: Text(
+                '${item.code} • ${item.hourlyRate} ₽/час${item.dailyRate != null ? ', ${item.dailyRate} ₽/смена' : ''}',
+              ),
               trailing: ElevatedButton(
-                onPressed: () => _showQuantityDialog(
-                  item.name,
-                  OrderItemType.equipment,
-                  item.id,
-                  item.hourlyRate,
-                  'час',
-                ),
+                onPressed: () => _showEquipmentShiftsHoursDialog(item),
                 child: const Text('Добавить'),
               ),
             );
@@ -267,6 +263,150 @@ class _NomenclatureSelectionDialogState extends ConsumerState<NomenclatureSelect
         );
       },
     );
+  }
+
+  void _showEquipmentShiftsHoursDialog(Equipment equipment) async {
+    final shiftsController = TextEditingController();
+    final hoursController = TextEditingController();
+    final fuelExpenseController = TextEditingController();
+    final repairExpenseController = TextEditingController();
+    
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Добавить: ${equipment.name}'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: shiftsController,
+                decoration: const InputDecoration(
+                  labelText: 'Количество смен',
+                  hintText: '0',
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: TextInputType.numberWithOptions(decimal: false),
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp(r'^\d+')),
+                ],
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: hoursController,
+                decoration: const InputDecoration(
+                  labelText: 'Количество часов',
+                  hintText: '0.0',
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}')),
+                ],
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: fuelExpenseController,
+                decoration: const InputDecoration(
+                  labelText: 'Расходы на топливо (₽)',
+                  hintText: '0.00',
+                  border: OutlineInputBorder(),
+                  helperText: 'Опционально',
+                ),
+                keyboardType: TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}')),
+                ],
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: repairExpenseController,
+                decoration: const InputDecoration(
+                  labelText: 'Расходы на ремонт техники (₽)',
+                  hintText: '0.00',
+                  border: OutlineInputBorder(),
+                  helperText: 'Опционально',
+                ),
+                keyboardType: TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}')),
+                ],
+              ),
+              if (equipment.dailyRate != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    'Цена за смену: ${equipment.dailyRate} ₽\nЦена за час: ${equipment.hourlyRate} ₽',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Отмена'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final shifts = double.tryParse(shiftsController.text) ?? 0.0;
+              final hours = double.tryParse(hoursController.text) ?? 0.0;
+              
+              if (shifts == 0 && hours == 0) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Укажите хотя бы количество смен или часов'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+                return;
+              }
+              
+              Navigator.pop(context, true);
+            },
+            child: const Text('Добавить'),
+          ),
+        ],
+      ),
+    );
+    
+    if (result == true) {
+      final shifts = double.tryParse(shiftsController.text) ?? 0.0;
+      final hours = double.tryParse(hoursController.text) ?? 0.0;
+      final fuelExpense = fuelExpenseController.text.trim().isEmpty 
+          ? null 
+          : double.tryParse(fuelExpenseController.text.trim());
+      final repairExpense = repairExpenseController.text.trim().isEmpty 
+          ? null 
+          : double.tryParse(repairExpenseController.text.trim());
+      
+      // Рассчитываем общее количество для quantity (смены * 8 + часы)
+      final totalQuantity = shifts * 8 + hours;
+      
+      // Создаем metadata с информацией о сменах, часах и расходах
+      final metadata = <String, dynamic>{
+        'shifts': shifts,
+        'hours': hours,
+        if (equipment.dailyRate != null) 'daily_rate': equipment.dailyRate,
+      };
+      
+      final item = OrderItem(
+        itemType: OrderItemType.equipment,
+        refId: equipment.id,
+        nameSnapshot: equipment.name,
+        quantity: totalQuantity,
+        unit: 'час',
+        unitPrice: equipment.hourlyRate,
+        taxRate: 0.0,
+        discount: 0.0,
+        fuelExpense: fuelExpense,
+        repairExpense: repairExpense,
+        metadata: metadata,
+      );
+      
+      _addItem(item);
+    }
   }
 
   void _showQuantityDialog(String name, OrderItemType type, int refId, double unitPrice, String unit) {
