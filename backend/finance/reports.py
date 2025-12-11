@@ -56,8 +56,8 @@ def filter_range(queryset, field: str, date_from: Optional[str], date_to: Option
 
 
 def summary_report(date_from: Optional[str], date_to: Optional[str]) -> dict:
-    # Для доходов учитываем все заказы, кроме отмененных
-    orders = Order.objects.exclude(status=OrderStatus.CANCELLED)
+    # Для доходов учитываем все заказы, кроме отмененных и удаленных
+    orders = Order.objects.exclude(status__in=[OrderStatus.CANCELLED, OrderStatus.DELETED])
     
     # Применяем фильтр по дате создания заказа
     # Если период указан, фильтруем по created_at
@@ -348,7 +348,7 @@ def equipment_report(date_from: Optional[str], date_to: Optional[str]) -> list[d
 def employees_report(date_from: Optional[str], date_to: Optional[str]) -> list[dict]:
     """Отчет по сотрудникам с фильтрацией зарплат по дате заказа."""
     # Фильтруем заказы по периоду, если указан
-    orders = Order.objects.exclude(status=OrderStatus.CANCELLED)
+    orders = Order.objects.exclude(status__in=[OrderStatus.CANCELLED, OrderStatus.DELETED])
     if date_from or date_to:
         orders = filter_range(orders, "created_at", date_from, date_to)
     

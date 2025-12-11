@@ -285,7 +285,28 @@ class _EquipmentCard extends ConsumerWidget {
                 },
               )
             : const Icon(Icons.construction, size: 50),
-        title: Text(equipment.name),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              equipment.name,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+            ),
+            if (equipment.description.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(
+                equipment.description,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Colors.grey[600],
+                    ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ],
+        ),
         subtitle: Text('${equipment.code} • ${equipment.hourlyRate} ₽/час'),
         trailing: isAdmin
             ? Row(

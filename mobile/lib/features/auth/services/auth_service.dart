@@ -32,22 +32,9 @@ class AuthService {
 
       final authResponse = AuthResponse.fromJson(response.data);
 
-      // Если в ответе нет user, получаем его отдельно
-      if (authResponse.user == null) {
-        try {
-          final userResponse = await _dio.get('/users/me/');
-          final userInfo = UserInfo.fromJson(userResponse.data);
-          return AuthResponse(
-            access: authResponse.access,
-            refresh: authResponse.refresh,
-            user: userInfo,
-          );
-        } catch (e) {
-          // Если не удалось получить user, возвращаем ответ без него
-          return authResponse;
-        }
-      }
-
+      // НЕ делаем запрос /users/me/ здесь, так как токен еще не сохранен в SecureStorage
+      // AuthInterceptor не сможет использовать новый токен
+      // Запрос /users/me/ будет сделан в AuthNotifier после сохранения токена
       return authResponse;
     } on DioException catch (e) {
       if (e.response?.statusCode == 401) {
@@ -112,21 +99,9 @@ class AuthService {
 
       final authResponse = AuthResponse.fromJson(response.data);
 
-      // Если в ответе нет user, получаем его отдельно
-      if (authResponse.user == null) {
-        try {
-          final userResponse = await _dio.get('/users/me/');
-          final userInfo = UserInfo.fromJson(userResponse.data);
-          return AuthResponse(
-            access: authResponse.access,
-            refresh: authResponse.refresh,
-            user: userInfo,
-          );
-        } catch (e) {
-          return authResponse;
-        }
-      }
-
+      // НЕ делаем запрос /users/me/ здесь, так как токен еще не сохранен в SecureStorage
+      // AuthInterceptor не сможет использовать новый токен
+      // Запрос /users/me/ будет сделан в AuthNotifier после сохранения токена
       return authResponse;
     } on DioException catch (e) {
       if (e.response?.statusCode == 400) {

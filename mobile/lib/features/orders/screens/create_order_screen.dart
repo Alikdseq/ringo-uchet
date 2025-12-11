@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/order_models.dart';
 import '../services/order_service.dart';
+import '../widgets/nomenclature_selection_dialog.dart';
 import '../../catalog/services/client_service.dart';
 import '../../auth/services/user_service.dart';
 import '../../../shared/models/user.dart';
@@ -33,6 +34,11 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
   List<UserInfo> _operators = [];
   Set<int> _selectedOperatorIds = {};  // Множественный выбор операторов
   bool _isLoadingOperators = false;
+  
+  // Номенклатура
+  final List<OrderItem> _selectedItems = [];
+  final TextEditingController _totalAmountController = TextEditingController();
+  bool _approveOnCreate = false;  // Флаг для одобрения при создании
 
   @override
   void initState() {
@@ -47,6 +53,7 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
     _clientPhoneController.dispose();
     _addressController.dispose();
     _descriptionController.dispose();
+    _totalAmountController.dispose();
     super.dispose();
   }
 
@@ -260,6 +267,40 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
 
             const SizedBox(height: 24),
 
+            // Раздел: Номенклатура
+            _buildSectionHeader('Номенклатура'),
+            const SizedBox(height: 8),
+            _buildNomenclatureSelection(),
+            const SizedBox(height: 24),
+
+            // Раздел: Примерная стоимость
+            _buildSectionHeader('Примерная стоимость'),
+            const SizedBox(height: 8),
+            TextFormField(
+              controller: _totalAmountController,
+              decoration: const InputDecoration(
+                labelText: 'Примерная стоимость (₽)',
+                hintText: 'Введите примерную стоимость',
+                border: OutlineInputBorder(),
+              ),
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}'))],
+            ),
+            const SizedBox(height: 24),
+
+            // Кнопка "Одобрить при создании"
+            CheckboxListTile(
+              title: const Text('Одобрить заявку при создании'),
+              value: _approveOnCreate,
+              onChanged: (value) {
+                setState(() {
+                  _approveOnCreate = value ?? false;
+                });
+              },
+              controlAffinity: ListTileControlAffinity.leading,
+            ),
+            const SizedBox(height: 24),
+
             // Раздел: Дата начала
             _buildSectionHeader('Дата начала'),
             const SizedBox(height: 8),
@@ -329,6 +370,74 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
     );
   }
 
+  Widget _buildNomenclatureSelection() {
+    return Card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Выбранная номенклатура',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                ElevatedButton.icon(
+                  onPressed: _showNomenclatureDialog,
+                  icon: const Icon(Icons.add),
+                  label: const Text('Добавить'),
+                ),
+              ],
+            ),
+          ),
+          if (_selectedItems.isEmpty)
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(
+                'Номенклатура не выбрана',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Colors.grey[600],
+                    ),
+              ),
+            )
+          else
+            ..._selectedItems.asMap().entries.map((entry) {
+              final index = entry.key;
+              final item = entry.value;
+              return ListTile(
+                title: Text(item.nameSnapshot),
+                subtitle: Text(
+                  '${item.quantity} ${item.unit} × ${item.unitPrice.toStringAsFixed(2)} ₽ = ${((item.quantity * item.unitPrice) * (1 - item.discount / 100)).toStringAsFixed(2)} ₽',
+                ),
+                trailing: IconButton(
+                  icon: const Icon(Icons.delete, color: Colors.red),
+                  onPressed: () {
+                    setState(() {
+                      _selectedItems.removeAt(index);
+                    });
+                  },
+                ),
+              );
+            }),
+        ],
+      ),
+    );
+  }
+  
+  Future<void> _showNomenclatureDialog() async {
+    final result = await showDialog<List<OrderItem>>(
+      context: context,
+      builder: (context) => const NomenclatureSelectionDialog(),
+    );
+    
+    if (result != null && result.isNotEmpty) {
+      setState(() {
+        _selectedItems.addAll(result);
+      });
+    }
+  }
 
   Future<void> _createOrder() async {
     if (!_formKey.currentState!.validate()) {
@@ -373,6 +482,15 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
                   ? [_manualOperatorId!]
                   : null));
 
+      // Определяем статус: одобрен если выбрано, иначе создан
+      final orderStatus = _approveOnCreate ? OrderStatus.approved : OrderStatus.created;
+      
+      // Получаем примерную стоимость если указана
+      double? totalAmount;
+      if (_totalAmountController.text.isNotEmpty) {
+        totalAmount = double.tryParse(_totalAmountController.text.trim());
+      }
+      
       final request = OrderRequest(
         clientId: clientId is int ? clientId : int.parse(clientId.toString()),
         address: _addressController.text.trim(),
@@ -381,10 +499,11 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
         description: _descriptionController.text.trim().isEmpty 
             ? '' 
             : _descriptionController.text.trim(),
-        status: OrderStatus.created, // Создаем сразу со статусом "Создан"
+        status: orderStatus, // Создаем со статусом "Создан" или "Одобрен"
         operatorId: operatorIds?.isNotEmpty == true ? operatorIds!.first : null, // Для обратной совместимости
         operatorIds: operatorIds, // Список ID операторов
-        items: [], // Items не добавляются при создании, они будут добавлены при завершении заявки
+        items: _selectedItems.isNotEmpty ? _selectedItems : null, // Добавляем номенклатуру если выбрана
+        totalAmount: totalAmount, // Примерная стоимость
       );
 
       await orderService.createOrder(request);

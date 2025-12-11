@@ -16,7 +16,8 @@ class CaptchaWidget extends StatefulWidget {
 
 class _CaptchaWidgetState extends State<CaptchaWidget> {
   bool _isVerified = false;
-  String _captchaToken = 'stub_captcha_token_${DateTime.now().millisecondsSinceEpoch}';
+  final String _captchaToken =
+      'stub_captcha_token_${DateTime.now().millisecondsSinceEpoch}';
 
   void _handleVerify() {
     setState(() {
@@ -79,4 +80,3 @@ class _CaptchaWidgetState extends State<CaptchaWidget> {
     );
   }
 }
-

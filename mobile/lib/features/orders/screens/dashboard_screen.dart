@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/constants/status_colors.dart';
+import '../../../core/offline/cache_service.dart';
+import '../../../core/providers/navigation_provider.dart';
 import '../../auth/providers/auth_providers.dart';
 import '../models/order_models.dart';
 import '../services/order_service.dart';
-import 'orders_list_screen.dart';
 import 'create_order_screen.dart';
-import '../../finance/screens/reports_screen.dart';
 
 /// Экран Dashboard с KPI
 class DashboardScreen extends ConsumerStatefulWidget {
@@ -29,7 +29,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     _loadKPIData();
   }
 
-  Future<void> _loadKPIData() async {
+  Future<void> _loadKPIData({bool useCache = true}) async {
     setState(() {
       _isLoading = true;
     });
@@ -37,24 +37,66 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     try {
       final orderService = ref.read(orderServiceProvider);
       
-      // Загружаем заявки для подсчёта KPI
-      final allOrders = await orderService.getOrders();
-      // Новые заявки = CREATED + APPROVED (созданные и подтвержденные)
-      final newOrders = allOrders.where((o) => 
-        o.status == OrderStatus.created || o.status == OrderStatus.approved
-      ).length;
-      final assignedOrders = allOrders.where((o) => o.status == OrderStatus.inProgress).length;
-      final profit = allOrders
-          .where((o) => o.status == OrderStatus.completed)
-          .fold(0.0, (sum, o) => sum + o.totalAmount);
+      // ОПТИМИЗАЦИЯ: Сначала загружаем из кэша для мгновенного отображения
+      if (useCache) {
+        try {
+          final cacheService = ref.read(cacheServiceProvider);
+          final cachedOrders = await cacheService.getCachedOrders();
+          if (cachedOrders != null && cachedOrders.isNotEmpty) {
+            final orders = cachedOrders
+                .map((json) => Order.fromJson(json as Map<String, dynamic>))
+                .toList();
+            
+            // Вычисляем KPI из кэша
+            final newOrders = orders.where((o) => 
+              o.status == OrderStatus.created || o.status == OrderStatus.approved
+            ).length;
+            final assignedOrders = orders.where((o) => o.status == OrderStatus.inProgress).length;
+            final profit = orders
+                .where((o) => o.status == OrderStatus.completed)
+                .fold(0.0, (sum, o) => sum + o.totalAmount);
 
-      setState(() {
-        _newOrdersCount = newOrders;
-        _assignedOrdersCount = assignedOrders;
-        _profit = profit;
-        _allOrders = allOrders;
-        _isLoading = false;
-      });
+            // Показываем кэшированные данные МГНОВЕННО
+            setState(() {
+              _newOrdersCount = newOrders;
+              _assignedOrdersCount = assignedOrders;
+              _profit = profit;
+              _allOrders = orders;
+              _isLoading = false; // UI готов, данные из кэша
+            });
+          }
+        } catch (e) {
+          // Если кэш недоступен, продолжаем загрузку с сервера
+        }
+      }
+      
+      // Затем в ФОНЕ обновляем данные с сервера
+      try {
+        final allOrders = await orderService.getOrders(useCache: true);
+        // Новые заявки = CREATED + APPROVED (созданные и подтвержденные)
+        final newOrders = allOrders.where((o) => 
+          o.status == OrderStatus.created || o.status == OrderStatus.approved
+        ).length;
+        final assignedOrders = allOrders.where((o) => o.status == OrderStatus.inProgress).length;
+        final profit = allOrders
+            .where((o) => o.status == OrderStatus.completed)
+            .fold(0.0, (sum, o) => sum + o.totalAmount);
+
+        setState(() {
+          _newOrdersCount = newOrders;
+          _assignedOrdersCount = assignedOrders;
+          _profit = profit;
+          _allOrders = allOrders;
+          _isLoading = false;
+        });
+      } catch (e) {
+        // Если обновление не удалось, оставляем данные из кэша
+        if (_allOrders.isEmpty) {
+          setState(() {
+            _isLoading = false;
+          });
+        }
+      }
     } catch (e) {
       setState(() {
         _isLoading = false;
@@ -115,6 +157,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     final authState = ref.watch(authStateProvider);
     final user = authState.user;
     final isAdmin = user?.role == 'admin';
+    final navigationNotifier = ref.read(navigationIndexProvider.notifier);
     
     return Row(
       children: [
@@ -125,12 +168,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             icon: Icons.add_circle,
             color: StatusColors.created,
             onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const OrdersListScreen(),
-                ),
-              );
+              // Переключаемся на экран заявок через нижнюю панель
+              navigationNotifier.navigateToOrders();
             },
           ),
         ),
@@ -142,12 +181,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             icon: Icons.assignment,
             color: StatusColors.inProgress,
             onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const OrdersListScreen(),
-                ),
-              );
+              // Переключаемся на экран заявок через нижнюю панель
+              navigationNotifier.navigateToOrders();
             },
           ),
         ),
@@ -160,11 +195,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               icon: Icons.attach_money,
               color: StatusColors.completed,
               onTap: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => const ReportsScreen(),
-                  ),
-                );
+                // Переключаемся на экран отчетов через нижнюю панель
+                navigationNotifier.setIndex(3); // Индекс экрана отчетов для админа
               },
             ),
           ),
@@ -304,6 +336,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     final role = user?.role ?? 'user';
     final isAdmin = role == 'admin';
     final isOperator = role == 'operator';
+    final navigationNotifier = ref.read(navigationIndexProvider.notifier);
 
     // Для оператора быстрые действия скрываем полностью
     if (isOperator) {
@@ -326,12 +359,22 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             ListTile(
               leading: const Icon(Icons.add),
               title: const Text('Создать заявку'),
-              onTap: () {
-                Navigator.of(context).push(
+              onTap: () async {
+                // Открываем экран создания заявки с AppBar и кнопкой назад
+                final result = await Navigator.of(context).push(
                   MaterialPageRoute(
-                    builder: (_) => const CreateOrderScreen(),
+                    builder: (_) => Scaffold(
+                      appBar: AppBar(
+                        title: const Text('Создать заявку'),
+                      ),
+                      body: const CreateOrderScreen(),
+                    ),
                   ),
                 );
+                // Обновляем данные если заявка создана
+                if (result == true) {
+                  _loadKPIData();
+                }
               },
             ),
             if (isAdmin) ...[
@@ -340,11 +383,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                 leading: const Icon(Icons.report),
                 title: const Text('Отчёты'),
                 onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const ReportsScreen(),
-                    ),
-                  );
+                  // Переключаемся на экран отчетов через нижнюю панель
+                  navigationNotifier.setIndex(3); // Индекс экрана отчетов для админа
                 },
               ),
             ],
@@ -372,6 +412,19 @@ class _KPICard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Определяем размер шрифта в зависимости от длины значения
+    final valueLength = value.length;
+    double fontSize;
+    if (valueLength <= 4) {
+      fontSize = 24; // Для небольших чисел (до 4 символов)
+    } else if (valueLength <= 6) {
+      fontSize = 20; // Для средних чисел (5-6 символов)
+    } else if (valueLength <= 8) {
+      fontSize = 16; // Для больших чисел (7-8 символов)
+    } else {
+      fontSize = 14; // Для очень больших чисел (9+ символов)
+    }
+
     return Card(
       elevation: 2,
       shape: RoundedRectangleBorder(
@@ -396,12 +449,18 @@ class _KPICard extends StatelessWidget {
                     ),
                     child: Icon(icon, color: color, size: 24),
                   ),
-                  Text(
-                    value,
-                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: color,
-                        ),
+                  Flexible(
+                    child: Text(
+                      value,
+                      style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: color,
+                            fontSize: fontSize,
+                          ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.end,
+                    ),
                   ),
                 ],
               ),

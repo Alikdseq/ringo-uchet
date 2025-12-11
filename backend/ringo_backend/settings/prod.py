@@ -29,3 +29,26 @@ SECURE_SSL_REDIRECT = True
 
 LOGGING["root"]["level"] = "WARNING"  # type: ignore
 
+# CORS настройки для production
+# Разрешаем только определенные origins из переменной окружения
+_cors_origins_env = __import__("os").environ.get("CORS_ALLOWED_ORIGINS", "")
+CORS_ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in _cors_origins_env.split(",")
+    if origin.strip()
+]
+
+# Если CORS_ALLOWED_ORIGINS не задан, используем регулярные выражения для localhost (для разработки)
+if not CORS_ALLOWED_ORIGINS:
+    import re
+    CORS_ALLOWED_ORIGIN_REGEXES = [
+        re.compile(r"^http://localhost:\d+$"),
+        re.compile(r"^http://127\.0\.0\.1:\d+$"),
+        re.compile(r"^http://\[::1\]:\d+$"),  # IPv6 localhost
+    ]
+else:
+    CORS_ALLOWED_ORIGIN_REGEXES = []
+
+# Разрешаем credentials для CORS
+CORS_ALLOW_CREDENTIALS = True
+

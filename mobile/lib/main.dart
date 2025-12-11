@@ -1,6 +1,5 @@
 import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:flutter/material.dart';
 import 'main_dev.dart' as dev;
 import 'main_windows.dart' as windows;
 import 'main_web.dart' as web;
