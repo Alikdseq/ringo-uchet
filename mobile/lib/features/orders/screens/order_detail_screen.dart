@@ -348,7 +348,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                       fontWeight: FontWeight.bold,
                     ),
               ),
-              if (isAdmin && _order!.status != OrderStatus.deleted)
+              if (isAdmin)
                 IconButton(
                   icon: const Icon(Icons.save, size: 20),
                   onPressed: _isSaving ? null : _saveChanges,
@@ -357,7 +357,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
             ],
           ),
           const SizedBox(height: 8),
-          if (isAdmin && _order!.status != OrderStatus.deleted)
+          if (isAdmin)
             TextField(
               controller: _addressController,
               decoration: const InputDecoration(
@@ -409,7 +409,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                       fontWeight: FontWeight.bold,
                     ),
               ),
-              if (isAdmin && _order!.status != OrderStatus.deleted)
+              if (isAdmin)
                 ElevatedButton.icon(
                   onPressed: _isSaving ? null : _showNomenclatureDialog,
                   icon: const Icon(Icons.add, size: 18),
@@ -494,7 +494,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                             calculatedTotal.toStringAsFixed(2) + ' ₽',
                             style: const TextStyle(fontWeight: FontWeight.bold),
                           ),
-                          if (isAdmin && _order!.status != OrderStatus.deleted) ...[
+                          if (isAdmin) ...[
                             const SizedBox(width: 8),
                             IconButton(
                               icon: const Icon(Icons.delete, size: 20, color: Colors.red),
@@ -549,7 +549,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                       fontWeight: FontWeight.bold,
                     ),
               ),
-              if (isAdmin && _order!.status != OrderStatus.deleted)
+              if (isAdmin)
                 SizedBox(
                   width: 150,
                   child: TextField(
@@ -721,7 +721,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
               ),
             ],
             // Кнопка удаления доступна только менеджерам/админам и если заявка не удалена
-            if (!isOperator && _order!.status != OrderStatus.deleted) ...[
+            if (!isOperator) ...[
               const SizedBox(height: 8),
               ElevatedButton.icon(
                 onPressed: _deleteOrder,
@@ -765,7 +765,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                 ),
           ),
           const SizedBox(height: 8),
-          if (isAdmin && _order!.status != OrderStatus.deleted)
+          if (isAdmin)
             TextField(
               controller: _descriptionController,
               decoration: const InputDecoration(
@@ -1065,7 +1065,6 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
         return 'Завершён';
       case OrderStatus.cancelled:
         return 'Отменён';
-      case OrderStatus.deleted:
         return 'Удалён';
     }
   }
@@ -1077,7 +1076,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Удалить заявку?'),
-        content: Text('Вы уверены, что хотите удалить заявку ${_order!.number}? Заявка будет переведена в статус "Удалён" и исключена из отчетов.'),
+        content: Text('Вы уверены, что хотите удалить заявку ${_order!.number}? Заявка будет полностью удалена из базы данных. Это действие нельзя отменить.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -1097,10 +1096,10 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
     try {
       final orderService = ref.read(orderServiceProvider);
       await orderService.deleteOrder(widget.orderId);
-      await _loadOrder();
       if (mounted) {
+        Navigator.pop(context, true); // Возвращаемся к списку заявок
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Заявка удалена')),
+          const SnackBar(content: Text('Заявка полностью удалена из базы данных')),
         );
       }
     } catch (e) {

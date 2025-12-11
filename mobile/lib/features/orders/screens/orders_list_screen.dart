@@ -31,7 +31,6 @@ class _OrdersListScreenState extends ConsumerState<OrdersListScreen> with Single
     OrderStatus.inProgress,
     OrderStatus.completed,
     OrderStatus.cancelled,
-    OrderStatus.deleted,
   ];
 
   @override
@@ -87,7 +86,7 @@ class _OrdersListScreenState extends ConsumerState<OrdersListScreen> with Single
             
             // Исключаем удаленные заявки для не-админов
             if (user?.role != 'admin' && user?.role != 'manager') {
-              orders = orders.where((order) => order.status != OrderStatus.deleted).toList();
+              // Удаленные заявки больше не существуют в БД, фильтрация не нужна
             }
             
             // Показываем кэшированные данные МГНОВЕННО
@@ -402,8 +401,6 @@ class _OrdersListScreenState extends ConsumerState<OrdersListScreen> with Single
         return 'Завершён';
       case OrderStatus.cancelled:
         return 'Отменён';
-      case OrderStatus.deleted:
-        return 'Удалён';
     }
   }
 }

@@ -97,7 +97,6 @@ const _$OrderStatusEnumMap = {
   OrderStatus.inProgress: 'IN_PROGRESS',
   OrderStatus.completed: 'COMPLETED',
   OrderStatus.cancelled: 'CANCELLED',
-  OrderStatus.deleted: 'DELETED',
 };
 
 OrderItem _$OrderItemFromJson(Map<String, dynamic> json) => OrderItem(

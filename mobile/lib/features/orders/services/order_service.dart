@@ -315,24 +315,18 @@ class OrderService {
     }
   }
 
-  /// Удалить заказ (перевести в статус DELETED)
-  Future<Order> deleteOrder(String id) async {
+  /// Удалить заказ (полностью удалить из базы данных)
+  Future<void> deleteOrder(String id) async {
     try {
-      final response = await _dio.post('/orders/$id/delete/');
-      final order = Order.fromJson(response.data);
+      await _dio.post('/orders/$id/delete/');
       
-      // Обновляем кэш
+      // Удаляем из кэша
       final cacheService = _ref.read(cacheServiceProvider);
       final cached = await cacheService.getCachedOrders();
       if (cached != null) {
-        final index = cached.indexWhere((o) => (o as Map)['id'] == id);
-        if (index != -1) {
-          cached[index] = order.toJson();
-          await cacheService.cacheOrders(cached);
-        }
+        cached.removeWhere((o) => (o as Map)['id'] == id);
+        await cacheService.cacheOrders(cached);
       }
-      
-      return order;
     } on DioException catch (e) {
       throw _handleError(e);
     } catch (e) {

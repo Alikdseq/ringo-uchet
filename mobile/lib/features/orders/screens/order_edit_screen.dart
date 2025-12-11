@@ -377,7 +377,6 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
         return 'Завершён';
       case OrderStatus.cancelled:
         return 'Отменён';
-      case OrderStatus.deleted:
         return 'Удалён';
     }
   }

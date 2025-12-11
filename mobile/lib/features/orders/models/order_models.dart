@@ -17,8 +17,6 @@ enum OrderStatus {
   completed,
   @JsonValue('CANCELLED')
   cancelled,
-  @JsonValue('DELETED')
-  deleted,
 }
 
 /// Тип позиции заказа
