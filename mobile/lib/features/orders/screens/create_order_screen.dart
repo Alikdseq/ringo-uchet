@@ -268,7 +268,19 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
             const SizedBox(height: 24),
 
             // Раздел: Номенклатура (необязательно)
-            _buildSectionHeader('Номенклатура (необязательно)'),
+            Row(
+              children: [
+                _buildSectionHeader('Номенклатура'),
+                const SizedBox(width: 8),
+                Text(
+                  '(необязательно)',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Colors.grey[600],
+                        fontStyle: FontStyle.italic,
+                      ),
+                ),
+              ],
+            ),
             const SizedBox(height: 8),
             _buildNomenclatureSelection(),
             const SizedBox(height: 24),
