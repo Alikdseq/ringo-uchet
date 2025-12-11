@@ -668,8 +668,6 @@ class _OrderCard extends ConsumerWidget {
         return 'Завершён';
       case OrderStatus.cancelled:
         return 'Отменён';
-      case OrderStatus.deleted:
-        return 'Удалён';
     }
   }
 

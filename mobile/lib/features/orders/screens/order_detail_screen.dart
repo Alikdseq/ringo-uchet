@@ -816,7 +816,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
               'Операторы не найдены',
               style: TextStyle(color: Colors.grey),
             )
-          else if (isAdmin && _order!.status != OrderStatus.deleted)
+          else if (isAdmin)
             Card(
               child: Column(
                 children: [
