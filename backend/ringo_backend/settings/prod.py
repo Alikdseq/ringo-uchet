@@ -52,3 +52,7 @@ else:
 # Разрешаем credentials для CORS
 CORS_ALLOW_CREDENTIALS = True
 
+# Переопределяем STATIC_ROOT для production (чтобы использовать writable volume)
+# В docker-compose.prod.yml смонтирован volume ./staticfiles:/app/staticfiles
+STATIC_ROOT = "/app/staticfiles"
+MEDIA_ROOT = "/app/media"
