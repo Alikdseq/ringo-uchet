@@ -2,9 +2,9 @@
 // Кэширует статические ресурсы и API ответы для офлайн работы
 // Улучшено для работы на мобильном интернете с таймаутами и retry
 
-const CACHE_NAME = 'ringo-uchet-v4';
-const STATIC_CACHE_NAME = 'ringo-static-v4';
-const API_CACHE_NAME = 'ringo-api-v4';
+const CACHE_NAME = 'ringo-uchet-v5';
+const STATIC_CACHE_NAME = 'ringo-static-v5';
+const API_CACHE_NAME = 'ringo-api-v5';
 
 // Таймауты для запросов (в миллисекундах)
 const NETWORK_TIMEOUT = 10000; // 10 секунд для обычных запросов
@@ -28,7 +28,7 @@ const STATIC_ASSETS = [
 
 // Установка Service Worker
 self.addEventListener('install', (event) => {
-  console.log('[Service Worker] Installing v4...');
+  console.log('[Service Worker] Installing v5...');
   event.waitUntil(
     caches.open(STATIC_CACHE_NAME).then((cache) => {
       console.log('[Service Worker] Caching static assets');
@@ -43,7 +43,7 @@ self.addEventListener('install', (event) => {
 
 // Активация Service Worker
 self.addEventListener('activate', (event) => {
-  console.log('[Service Worker] Activating v4...');
+  console.log('[Service Worker] Activating v5...');
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
@@ -253,29 +253,7 @@ self.addEventListener('fetch', (event) => {
           // Для других методов (не должно доходить сюда, но на всякий случай)
           throw error;
         })
-          
-          // Для GET запросов пробуем кэш как последний вариант
-          return caches.match(request).then((cachedResponse) => {
-            if (cachedResponse) {
-              console.log('[Service Worker] Using cached API response');
-              return cachedResponse;
-            }
-            
-            // Если кэша нет, возвращаем ошибку
-            return new Response(
-              JSON.stringify({ 
-                error: 'Network error', 
-                message: 'Проверьте подключение к интернету',
-                cached: false 
-              }),
-              {
-                status: 503,
-                statusText: 'Service Unavailable',
-                headers: { 'Content-Type': 'application/json' },
-              }
-            );
-          });
-        })
+    )
     );
     return;
   }
