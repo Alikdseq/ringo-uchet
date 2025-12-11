@@ -1,12 +1,20 @@
 from __future__ import annotations
+import os
 
 from .base import *  # noqa
 
 # Переопределяем STATIC_ROOT и MEDIA_ROOT для production (чтобы использовать writable volumes)
 # В docker-compose.prod.yml смонтированы volumes ./staticfiles:/app/staticfiles и ./media:/app/media
 # Важно: устанавливаем как строки, а не Path объекты, чтобы избежать проблем с путями
-STATIC_ROOT = "/app/staticfiles"
-MEDIA_ROOT = "/app/media"
+# Используем os.path для гарантии правильного формата пути
+STATIC_ROOT = os.path.normpath("/app/staticfiles")
+MEDIA_ROOT = os.path.normpath("/app/media")
+
+# Убеждаемся, что это строки, а не Path объекты
+if not isinstance(STATIC_ROOT, str):
+    STATIC_ROOT = str(STATIC_ROOT)
+if not isinstance(MEDIA_ROOT, str):
+    MEDIA_ROOT = str(MEDIA_ROOT)
 
 DEBUG = False
 
