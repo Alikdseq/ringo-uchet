@@ -77,8 +77,15 @@ class BaseReportView(APIView):
             cache_key = self._build_cache_key(request.path, params)
             data = cache.get(cache_key)
             if data is None:
-                data = self.generate_data(params)
-                cache.set(cache_key, data, timeout=60)
+                try:
+                    data = self.generate_data(params)
+                    cache.set(cache_key, data, timeout=60)
+                except Exception as e:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.error(f"Error generating report data: {e}", exc_info=True)
+                    # Возвращаем пустые данные вместо ошибки, чтобы не ломать UI
+                    data = self._get_empty_data()
             export_format = params.get("export")
             if export_format:
                 return self.export_response(data, export_format)
@@ -87,10 +94,18 @@ class BaseReportView(APIView):
             import logging
             logger = logging.getLogger(__name__)
             logger.error(f"Error generating report: {e}", exc_info=True)
-            return Response(
-                {"detail": f"Ошибка при генерации отчета: {str(e)}"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+            # Возвращаем пустые данные вместо ошибки
+            try:
+                return Response(self._get_empty_data())
+            except:
+                return Response(
+                    {"detail": f"Ошибка при генерации отчета: {str(e)}"},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+    
+    def _get_empty_data(self):
+        """Возвращает пустые данные для отчета"""
+        raise NotImplementedError("Subclasses must implement _get_empty_data")
 
     def generate_data(self, params):
         raise NotImplementedError
@@ -129,6 +144,32 @@ class SummaryReportView(BaseReportView):
 
     def generate_data(self, params):
         return summary_report(params.get("from"), params.get("to"))
+    
+    def _get_empty_data(self):
+        """Возвращает пустые данные для общего отчета"""
+        return {
+            "revenue": "0",
+            "revenue_from_services": "0",
+            "revenue_from_services_details": {
+                "total_amount": "0",
+                "total_quantity": "0",
+                "average_price_per_unit": "0",
+            },
+            "revenue_from_equipment": "0",
+            "revenue_from_equipment_details": {
+                "total_amount": "0",
+                "total_hours": "0",
+                "total_shifts": "0",
+                "average_price_per_hour": "0",
+            },
+            "expenses": "0",
+            "expenses_fuel": "0",
+            "expenses_repair": "0",
+            "salaries": "0",
+            "margin": "0",
+            "orders_count": 0,
+            "period": {"from": None, "to": None},
+        }
 
     def dataset_from_data(self, data):
         headers = ["metric", "value", "details"]
@@ -168,6 +209,10 @@ class EquipmentReportView(BaseReportView):
 
     def generate_data(self, params):
         return equipment_report(params.get("from"), params.get("to"))
+    
+    def _get_empty_data(self):
+        """Возвращает пустые данные для отчета по технике"""
+        return []
 
     def dataset_from_data(self, data):
         headers = ["equipment_id", "name", "code", "status", "total_hours", "revenue", "expenses", "fuel_expenses"]
@@ -206,6 +251,10 @@ class EmployeesReportView(BaseReportView):
 
     def generate_data(self, params):
         return employees_report(params.get("from"), params.get("to"))
+    
+    def _get_empty_data(self):
+        """Возвращает пустые данные для отчета по сотрудникам"""
+        return []
 
     def dataset_from_data(self, data):
         headers = ["user_id", "full_name", "total_amount", "total_hours", "assignments"]

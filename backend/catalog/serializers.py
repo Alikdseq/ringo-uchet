@@ -59,7 +59,22 @@ class ServiceItemSerializer(serializers.ModelSerializer):
                 defaults={"description": "Категория по умолчанию для услуг без категории"}
             )
             attrs['category'] = default_category
+        # При обновлении, если category_id не указан, сохраняем существующую категорию
+        elif self.instance is not None and 'category' not in attrs:
+            # При обновлении сохраняем существующую категорию
+            pass
         return attrs
+    
+    def create(self, validated_data):
+        """Создание услуги с обработкой категории"""
+        # Убеждаемся, что category установлена
+        if 'category' not in validated_data:
+            default_category, _ = ServiceCategory.objects.get_or_create(
+                name="Прочее",
+                defaults={"description": "Категория по умолчанию для услуг без категории"}
+            )
+            validated_data['category'] = default_category
+        return super().create(validated_data)
 
 
 class MaterialItemSerializer(serializers.ModelSerializer):

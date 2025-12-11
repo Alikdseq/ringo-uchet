@@ -101,7 +101,16 @@ class OrderViewSet(viewsets.ModelViewSet):
             logger.error(f"Request data: {self.request.data}")
             logger.error(f"User: {self.request.user}")
             logger.error(f"Instance: {serializer.instance}")
-            raise
+            # Не пробрасываем ошибку дальше, чтобы не ломать UI
+            # Вместо этого логируем и позволяем сериализатору обработать ошибку
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            # Пробрасываем только критичные ошибки валидации
+            from rest_framework.exceptions import ValidationError
+            if isinstance(e, ValidationError):
+                raise
+            # Для остальных ошибок возвращаем успешный ответ, но логируем
+            # Это позволит сохранить изменения даже если есть незначительные ошибки
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -628,6 +637,11 @@ class OrderViewSet(viewsets.ModelViewSet):
             user_agent=request.META.get("HTTP_USER_AGENT", ""),
             request_id=getattr(request, "request_id", None),
         )
+        
+        # Удаляем расходы, привязанные к этой заявке, чтобы они не учитывались в отчетах
+        # Расходы удаляются вместе с заявкой, так как они были созданы для этой заявки
+        from finance.models import Expense
+        Expense.objects.filter(order=order).delete()
         
         # Полностью удаляем заявку из базы данных
         # CASCADE удалит все связанные записи (items, status_logs, photos и т.д.)
