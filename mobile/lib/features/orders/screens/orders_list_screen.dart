@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/constants/status_colors.dart';
+import '../../../core/offline/cache_service.dart';
 import '../../../shared/widgets/offline_banner.dart';
 import '../../../shared/widgets/offline_queue_indicator.dart';
 import '../../../features/auth/providers/auth_providers.dart';
@@ -23,13 +24,14 @@ class _OrdersListScreenState extends ConsumerState<OrdersListScreen> with Single
   bool _isLoading = false;
   String? _error;
   
-  // Порядок статусов для табов (без черновика)
+  // Порядок статусов для табов (без черновика и удаленных)
   final List<OrderStatus> _statusOrder = [
     OrderStatus.created,
     OrderStatus.approved,
     OrderStatus.inProgress,
     OrderStatus.completed,
     OrderStatus.cancelled,
+    OrderStatus.deleted,
   ];
 
   @override
@@ -52,7 +54,7 @@ class _OrdersListScreenState extends ConsumerState<OrdersListScreen> with Single
     super.dispose();
   }
 
-  Future<void> _loadOrders() async {
+  Future<void> _loadOrders({bool useCache = true}) async {
     setState(() {
       _isLoading = true;
       _error = null;
@@ -63,25 +65,78 @@ class _OrdersListScreenState extends ConsumerState<OrdersListScreen> with Single
       final authState = ref.read(authStateProvider);
       final user = authState.user;
       
-      // Загружаем все заявки без фильтра по статусу
-      var orders = await orderService.getOrders(
-        search: _searchController.text.isEmpty ? null : _searchController.text,
-      );
-      
-      // Если пользователь - оператор, фильтруем только его заявки
-      if (user?.role == 'operator' && user?.id != null) {
-        final operatorId = user!.id;
-        orders = orders.where((order) {
-          final byId = order.operatorId == operatorId;
-          final byObject = order.operator != null && order.operator!.id == operatorId;
-          return byId || byObject;
-        }).toList();
+      // ОПТИМИЗАЦИЯ: Сначала загружаем из кэша для мгновенного отображения
+      if (useCache) {
+        try {
+          final cacheService = ref.read(cacheServiceProvider);
+          final cachedOrders = await cacheService.getCachedOrders();
+          if (cachedOrders != null && cachedOrders.isNotEmpty) {
+            var orders = cachedOrders
+                .map((json) => Order.fromJson(json as Map<String, dynamic>))
+                .toList();
+            
+            // Если пользователь - оператор, фильтруем только его заявки
+            if (user?.role == 'operator' && user?.id != null) {
+              final operatorId = user!.id;
+              orders = orders.where((order) {
+                final byId = order.operatorId == operatorId;
+                final byObject = order.operator != null && order.operator!.id == operatorId;
+                return byId || byObject;
+              }).toList();
+            }
+            
+            // Исключаем удаленные заявки для не-админов
+            if (user?.role != 'admin' && user?.role != 'manager') {
+              orders = orders.where((order) => order.status != OrderStatus.deleted).toList();
+            }
+            
+            // Показываем кэшированные данные МГНОВЕННО
+            setState(() {
+              _allOrders = orders;
+              _isLoading = false; // UI готов, данные из кэша
+            });
+          }
+        } catch (e) {
+          // Если кэш недоступен, продолжаем загрузку с сервера
+        }
       }
       
-      setState(() {
-        _allOrders = orders;
-        _isLoading = false;
-      });
+      // Затем в ФОНЕ обновляем данные с сервера
+      try {
+        // Загружаем все заявки без фильтра по статусу
+        var orders = await orderService.getOrders(
+          search: _searchController.text.isEmpty ? null : _searchController.text,
+          useCache: true,
+        );
+        
+        // Если пользователь - оператор, фильтруем только его заявки
+        if (user?.role == 'operator' && user?.id != null) {
+          final operatorId = user!.id;
+          orders = orders.where((order) {
+            final byId = order.operatorId == operatorId;
+            final byObject = order.operator != null && order.operator!.id == operatorId;
+            return byId || byObject;
+          }).toList();
+        }
+        
+        // Исключаем удаленные заявки для не-админов
+        if (user?.role != 'admin' && user?.role != 'manager') {
+          orders = orders.where((order) => order.status != OrderStatus.deleted).toList();
+        }
+        
+        setState(() {
+          _allOrders = orders;
+          _isLoading = false;
+        });
+      } catch (e) {
+        // Если обновление не удалось, оставляем данные из кэша
+        if (_allOrders.isEmpty) {
+          setState(() {
+            _error = e.toString();
+            _isLoading = false;
+          });
+        }
+      }
     } catch (e) {
       setState(() {
         _error = e.toString();
@@ -347,6 +402,8 @@ class _OrdersListScreenState extends ConsumerState<OrdersListScreen> with Single
         return 'Завершён';
       case OrderStatus.cancelled:
         return 'Отменён';
+      case OrderStatus.deleted:
+        return 'Удалён';
     }
   }
 }
@@ -606,6 +663,8 @@ class _OrderCard extends ConsumerWidget {
         return 'Завершён';
       case OrderStatus.cancelled:
         return 'Отменён';
+      case OrderStatus.deleted:
+        return 'Удалён';
     }
   }
 

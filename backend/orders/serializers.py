@@ -169,7 +169,7 @@ class OrderItemSerializer(serializers.ModelSerializer):
     ]
 )
 class OrderSerializer(serializers.ModelSerializer):
-    items = OrderItemSerializer(many=True, required=False, read_only=True)  # Только для чтения, не для создания
+    items = OrderItemSerializer(many=True, required=False)  # Теперь можно передавать при создании
     number = serializers.CharField(required=False, allow_blank=True, max_length=32)
     client_id = serializers.PrimaryKeyRelatedField(
         queryset=Client.objects.all(), source="client", write_only=True, allow_null=True
@@ -185,6 +185,7 @@ class OrderSerializer(serializers.ModelSerializer):
     )
     operators = serializers.SerializerMethodField(read_only=True)
     end_dt = serializers.DateTimeField(required=False, allow_null=True, read_only=True)  # Только для чтения при создании
+    total_amount = serializers.DecimalField(max_digits=12, decimal_places=2, required=False, allow_null=True)  # Можно указать при создании
 
     class Meta:
         model = Order
@@ -217,7 +218,7 @@ class OrderSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         )
-        read_only_fields = ("id", "created_by", "created_at", "updated_at", "client", "manager", "operator", "operators", "end_dt", "total_amount", "price_snapshot")
+        read_only_fields = ("id", "created_by", "created_at", "updated_at", "client", "manager", "operator", "operators", "end_dt", "price_snapshot")
 
     def get_operators(self, obj):
         """Возвращает список операторов заказа."""
@@ -280,10 +281,12 @@ class OrderSerializer(serializers.ModelSerializer):
         return value
 
     def create(self, validated_data: dict[str, Any]) -> Order:
-        # Убираем items из validated_data - они не добавляются при создании
-        validated_data.pop("items", None)
+        # Извлекаем items из validated_data (если переданы)
+        items_data = validated_data.pop("items", None)
         # Извлекаем operators из validated_data
         operators = validated_data.pop("operators", [])
+        # Извлекаем total_amount если указан (примерная стоимость)
+        total_amount = validated_data.pop("total_amount", None)
         user = self.context["request"].user
         validated_data.setdefault("created_by", user)
         # Если manager не указан явно, устанавливаем текущего пользователя как manager
@@ -307,21 +310,58 @@ class OrderSerializer(serializers.ModelSerializer):
             # Для обратной совместимости: если указан operator_id, добавляем его в operators
             if validated_data.get("operator"):
                 order.operators.add(validated_data["operator"])
-            # При создании items не добавляются, они будут добавлены при завершении заявки
-            order.total_amount = Decimal("0.00")
+            # Добавляем items если они переданы при создании
+            if items_data:
+                self._upsert_items(order, items_data)
+                # Пересчитываем общую стоимость если items добавлены
+                order.total_amount = calculate_order_total(order)
+            elif total_amount is not None:
+                # Если указана примерная стоимость без items, используем её
+                order.total_amount = Decimal(str(total_amount))
+            else:
+                # По умолчанию 0
+                order.total_amount = Decimal("0.00")
             order.save(update_fields=["total_amount"])
         return order
 
     def update(self, instance: Order, validated_data: dict[str, Any]) -> Order:
+        # Проверяем права: только админ может редактировать заявки на любом этапе
+        user = self.context["request"].user
+        if user.role != "admin" and not user.is_superuser:
+            # Для не-админов проверяем, что заявка не завершена и не удалена
+            if instance.status in [OrderStatus.COMPLETED, OrderStatus.DELETED]:
+                from rest_framework.exceptions import PermissionDenied
+                raise PermissionDenied("Только администратор может редактировать завершенные или удаленные заявки")
+        
+        # Извлекаем many-to-many поля и другие специальные поля ДО setattr
         items_data = validated_data.pop("items", None)
+        total_amount = validated_data.pop("total_amount", None)
+        operators = validated_data.pop("operators", None)  # Извлекаем operators (many-to-many)
+        
+        # Обновляем обычные поля
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
+        
         with transaction.atomic():
             instance.save()
+            
+            # Обновляем операторов если они переданы
+            if operators is not None:
+                instance.operators.set(operators)
+            
+            # Обновляем items если они переданы
             if items_data is not None:
                 instance.items.all().delete()
                 self._upsert_items(instance, items_data)
-            instance.total_amount = calculate_order_total(instance)
+            
+            # Пересчитываем total_amount если items изменены, иначе используем переданное значение
+            if items_data is not None:
+                instance.total_amount = calculate_order_total(instance)
+            elif total_amount is not None:
+                instance.total_amount = Decimal(str(total_amount))
+            else:
+                # Если items не изменены и total_amount не указан, пересчитываем из существующих items
+                instance.total_amount = calculate_order_total(instance)
             instance.save(update_fields=["total_amount"])
         return instance
 

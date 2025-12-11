@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import logging
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.auth import get_user_model
 from django.contrib.auth import password_validation
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -57,67 +59,85 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         email = attrs.get("email", "").strip()
         password = attrs.get("password")
 
+        logger.info(f"Token obtain attempt - username: {username}, phone: {phone}, email: {email}")
+
         # Проверяем, что указан хотя бы один идентификатор
         if not username and not phone and not email:
+            logger.warning("No identifier provided (username, phone, or email)")
             raise serializers.ValidationError(
                 {"detail": "Необходимо указать username, phone или email"}
             )
 
         # Нормализуем телефон (убираем пробелы, скобки, дефисы, плюсы)
+        original_phone = phone
         if phone:
             import re
             phone = re.sub(r'[\s\-\(\)\+]', '', phone)
             # Если телефон начинается с 7 или 8, оставляем как есть, иначе добавляем 7
             if phone and not phone.startswith(('7', '8')):
                 phone = '7' + phone
+            logger.info(f"Phone normalized: {original_phone} -> {phone}")
 
         # Ищем пользователя по phone, email или username
         user = None
         if phone:
             try:
                 user = User.objects.get(phone=phone)
+                logger.info(f"User found by phone: {phone}, user_id: {user.id}")
             except User.DoesNotExist:
                 # Пробуем найти по нормализованному телефону
                 try:
                     # Ищем по частичному совпадению (без +7 в начале)
                     normalized_phone = phone.lstrip('7').lstrip('8')
                     user = User.objects.filter(phone__endswith=normalized_phone).first()
-                except Exception:
-                    pass
+                    if user:
+                        logger.info(f"User found by partial phone match: {normalized_phone}, user_id: {user.id}")
+                except Exception as e:
+                    logger.warning(f"Error searching by partial phone: {e}")
         if not user and email:
             try:
                 user = User.objects.get(email__iexact=email)
+                logger.info(f"User found by email: {email}, user_id: {user.id}")
             except User.DoesNotExist:
-                pass
+                logger.warning(f"User not found by email: {email}")
         if not user and username:
             try:
                 user = User.objects.get(username=username)
+                logger.info(f"User found by username: {username}, user_id: {user.id}")
             except User.DoesNotExist:
-                pass
+                logger.warning(f"User not found by username: {username}")
 
         if user is None:
+            logger.warning(f"User not found - username: {username}, phone: {phone}, email: {email}")
             raise serializers.ValidationError(
                 {"detail": "Неверный телефон, email или пароль"}
             )
 
         # Проверяем пароль
         if not user.check_password(password):
+            logger.warning(f"Invalid password for user_id: {user.id}, phone: {user.phone}, email: {user.email}")
             raise serializers.ValidationError(
                 {"detail": "Неверный телефон, email или пароль"}
             )
 
         # Проверяем, что пользователь активен
         if not user.is_active:
+            logger.warning(f"Inactive user attempted login: user_id: {user.id}")
             raise serializers.ValidationError({"detail": "Пользователь неактивен"})
 
         # Устанавливаем username для дальнейшей обработки
         attrs["username"] = user.username
+        logger.info(f"Token generation for user_id: {user.id}, username: {user.username}")
 
         # Вызываем родительский метод для генерации токенов
         # Родительский метод уже возвращает словарь с "access" и "refresh" токенами
-        data = super().validate(attrs)
-
-        return data
+        try:
+            data = super().validate(attrs)
+            logger.info(f"Token generated successfully for user_id: {user.id}")
+            return data
+        except Exception as e:
+            logger.error(f"Error in parent validate() for user_id: {user.id}: {e}", exc_info=True)
+            raise
 
 
 class ChangePasswordSerializer(serializers.Serializer):

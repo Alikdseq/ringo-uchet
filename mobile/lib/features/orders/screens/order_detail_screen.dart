@@ -1,9 +1,12 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 // import 'package:printing/printing.dart';  // Временно отключено для сборки APK
 
 // Условный импорт для веб-платформы
@@ -12,11 +15,14 @@ import 'download_helper_stub.dart'
     as download_helper;
 import '../../../core/constants/status_colors.dart';
 import '../../auth/providers/auth_providers.dart';
+import '../../auth/services/user_service.dart';
 import '../models/order_models.dart';
 import '../services/order_service.dart';
 import '../widgets/status_timeline_widget.dart';
 import '../widgets/change_status_dialog.dart';
+import '../widgets/nomenclature_selection_dialog.dart';
 import 'complete_order_screen.dart';
+import '../../../shared/models/user.dart';
 
 /// Экран детали заявки
 class OrderDetailScreen extends ConsumerStatefulWidget {
@@ -35,11 +41,53 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
   Order? _order;
   bool _isLoading = false;
   String? _error;
+  
+  // Контроллеры для редактирования (только для админа)
+  final _totalAmountController = TextEditingController();
+  final _addressController = TextEditingController();
+  final _descriptionController = TextEditingController();
+  bool _isSaving = false;
+  List<OrderItem> _editableItems = [];
+  Set<int> _selectedOperatorIds = {};
+  List<UserInfo> _operators = [];
+  bool _isLoadingOperators = false;
+  
+  // Debounce таймер для автосохранения цены
+  Timer? _saveDebounceTimer;
 
   @override
   void initState() {
     super.initState();
     _loadOrder();
+    _loadOperators();
+  }
+  
+  @override
+  void dispose() {
+    _saveDebounceTimer?.cancel();
+    _totalAmountController.dispose();
+    _addressController.dispose();
+    _descriptionController.dispose();
+    super.dispose();
+  }
+  
+  Future<void> _loadOperators() async {
+    setState(() {
+      _isLoadingOperators = true;
+    });
+    try {
+      final userService = ref.read(userServiceProvider);
+      final operators = await userService.getOperators();
+      setState(() {
+        _operators = operators;
+        _isLoadingOperators = false;
+      });
+    } catch (e) {
+      setState(() {
+        _operators = [];
+        _isLoadingOperators = false;
+      });
+    }
   }
 
   Future<void> _loadOrder() async {
@@ -53,6 +101,24 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
       final order = await orderService.getOrder(widget.orderId);
       setState(() {
         _order = order;
+        _editableItems = order.items?.toList() ?? [];
+        // Восстанавливаем выбранных операторов из заявки
+        final operatorIdsFromOrder = <int>{};
+        if (order.operators != null) {
+          for (var op in order.operators!) {
+            operatorIdsFromOrder.add(op.id);
+          }
+        }
+        if (order.operator != null) {
+          operatorIdsFromOrder.add(order.operator!.id);
+        }
+        _selectedOperatorIds = operatorIdsFromOrder;
+        
+        // Устанавливаем стоимость - если есть totalAmount, используем его, иначе показываем 0
+        final totalAmount = order.totalAmount > 0 ? order.totalAmount : 0.0;
+        _totalAmountController.text = totalAmount.toStringAsFixed(2);
+        _addressController.text = order.address;
+        _descriptionController.text = order.description;
         _isLoading = false;
       });
     } catch (e) {
@@ -148,6 +214,18 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                             // Адрес и карта
                             _buildAddressSection(),
                             const Divider(),
+
+                            // Описание (только для админа редактируемое)
+                            if (!_isOperator()) ...[
+                              _buildDescriptionSection(),
+                              const Divider(),
+                            ],
+
+                            // Операторы (только для админа редактируемые)
+                            if (!_isOperator()) ...[
+                              _buildOperatorsSection(),
+                              const Divider(),
+                            ],
 
                             // Позиции заказа (скрываем для оператора)
                             if (!_isOperator()) ...[
@@ -255,19 +333,42 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
   }
 
   Widget _buildAddressSection() {
+    final isAdmin = _isAdmin();
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Адрес',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Адрес',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+              ),
+              if (isAdmin && _order!.status != OrderStatus.deleted)
+                IconButton(
+                  icon: const Icon(Icons.save, size: 20),
+                  onPressed: _isSaving ? null : _saveChanges,
+                  tooltip: 'Сохранить изменения',
                 ),
+            ],
           ),
           const SizedBox(height: 8),
-          Text(_order!.address),
+          if (isAdmin && _order!.status != OrderStatus.deleted)
+            TextField(
+              controller: _addressController,
+              decoration: const InputDecoration(
+                labelText: 'Адрес',
+                border: OutlineInputBorder(),
+              ),
+              maxLines: 2,
+              enabled: !_isSaving,
+            )
+          else
+            Text(_order!.address),
           if (_order!.geoLat != null && _order!.geoLng != null) ...[
             const SizedBox(height: 8),
             // TODO: Добавить Google Maps виджет
@@ -291,23 +392,49 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
   }
 
   Widget _buildItemsSection() {
-    if (_order!.items == null || _order!.items!.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
+    final isAdmin = _isAdmin();
+    final items = isAdmin ? _editableItems : (_order!.items ?? []);
+    
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Позиции заказа',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Номенклатура',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+              ),
+              if (isAdmin && _order!.status != OrderStatus.deleted)
+                ElevatedButton.icon(
+                  onPressed: _isSaving ? null : _showNomenclatureDialog,
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('Добавить'),
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  ),
                 ),
+            ],
           ),
           const SizedBox(height: 8),
-          ..._order!.items!.map((item) {
+          if (items.isEmpty)
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(
+                'Номенклатура не выбрана',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Colors.grey[600],
+                    ),
+              ),
+            )
+          else
+            ...items.asMap().entries.map((entry) {
+              final index = entry.key;
+              final item = entry.value;
                 // Правильный расчет стоимости для техники
                 // ВСЕГДА используем lineTotal с сервера, если он есть - это правильный расчет
                 double calculatedTotal;
@@ -360,9 +487,27 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                               : '${item.nameSnapshot} x${item.quantity} ${item.unit}',
                         ),
                       ),
-                      Text(
-                        calculatedTotal.toStringAsFixed(2) + ' ₽',
-                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            calculatedTotal.toStringAsFixed(2) + ' ₽',
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          if (isAdmin && _order!.status != OrderStatus.deleted) ...[
+                            const SizedBox(width: 8),
+                            IconButton(
+                              icon: const Icon(Icons.delete, size: 20, color: Colors.red),
+                              onPressed: _isSaving ? null : () {
+                                setState(() {
+                                  _editableItems.removeAt(index);
+                                });
+                                _saveChanges();
+                              },
+                              tooltip: 'Удалить',
+                            ),
+                          ],
+                        ],
                       ),
                     ],
                   ),
@@ -374,6 +519,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
   }
 
   Widget _buildFinanceSection() {
+    final isAdmin = _isAdmin();
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -403,13 +549,54 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                       fontWeight: FontWeight.bold,
                     ),
               ),
-              Text(
-                '${_order!.totalAmount.toStringAsFixed(2)} ₽',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: Theme.of(context).primaryColor,
+              if (isAdmin && _order!.status != OrderStatus.deleted)
+                SizedBox(
+                  width: 150,
+                  child: TextField(
+                    controller: _totalAmountController,
+                    decoration: const InputDecoration(
+                      labelText: 'Стоимость (₽)',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                      contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 12),
                     ),
-              ),
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: Theme.of(context).primaryColor,
+                        ),
+                    keyboardType: TextInputType.numberWithOptions(decimal: true),
+                    inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}'))],
+                    enabled: !_isSaving,
+                    onChanged: (value) {
+                      // Отменяем предыдущий таймер
+                      _saveDebounceTimer?.cancel();
+                      // Устанавливаем новый таймер на 5 секунд
+                      _saveDebounceTimer = Timer(const Duration(seconds: 5), () {
+                        if (mounted && _totalAmountController.text == value) {
+                          _saveChanges();
+                        }
+                      });
+                    },
+                    onEditingComplete: () {
+                      // Сохраняем при потере фокуса (Enter или Tab)
+                      _saveDebounceTimer?.cancel();
+                      _saveChanges();
+                    },
+                    onSubmitted: (_) {
+                      // Сохраняем при нажатии Enter
+                      _saveDebounceTimer?.cancel();
+                      _saveChanges();
+                    },
+                  ),
+                )
+              else
+                Text(
+                  '${(_order!.totalAmount > 0 ? _order!.totalAmount : 0.0).toStringAsFixed(2)} ₽',
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: Theme.of(context).primaryColor,
+                      ),
+                ),
             ],
           ),
         ],
@@ -533,6 +720,19 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                 label: const Text('Получить чек'),
               ),
             ],
+            // Кнопка удаления доступна только менеджерам/админам и если заявка не удалена
+            if (!isOperator && _order!.status != OrderStatus.deleted) ...[
+              const SizedBox(height: 8),
+              ElevatedButton.icon(
+                onPressed: _deleteOrder,
+                icon: const Icon(Icons.delete),
+                label: const Text('Удалить заявку'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
+                  foregroundColor: Colors.white,
+                ),
+              ),
+            ],
           ],
         ],
       ),
@@ -543,6 +743,194 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
     final authState = ref.read(authStateProvider);
     final user = authState.user;
     return user?.role == 'operator';
+  }
+
+  bool _isAdmin() {
+    final authState = ref.read(authStateProvider);
+    final user = authState.user;
+    return user?.role == 'admin';
+  }
+
+  Widget _buildDescriptionSection() {
+    final isAdmin = _isAdmin();
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Описание',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+          ),
+          const SizedBox(height: 8),
+          if (isAdmin && _order!.status != OrderStatus.deleted)
+            TextField(
+              controller: _descriptionController,
+              decoration: const InputDecoration(
+                labelText: 'Описание заявки',
+                border: OutlineInputBorder(),
+              ),
+              maxLines: 4,
+              enabled: !_isSaving,
+              onChanged: (value) {
+                // Автосохранение при изменении
+                Future.delayed(const Duration(milliseconds: 500), () {
+                  if (mounted && _descriptionController.text == value) {
+                    _saveChanges();
+                  }
+                });
+              },
+            )
+          else
+            Text(
+              _order!.description.isEmpty ? 'Описание отсутствует' : _order!.description,
+              style: TextStyle(
+                color: _order!.description.isEmpty ? Colors.grey[600] : null,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOperatorsSection() {
+    final isAdmin = _isAdmin();
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Операторы',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+          ),
+          const SizedBox(height: 8),
+          if (_isLoadingOperators)
+            const Center(child: CircularProgressIndicator())
+          else if (_operators.isEmpty)
+            const Text(
+              'Операторы не найдены',
+              style: TextStyle(color: Colors.grey),
+            )
+          else if (isAdmin && _order!.status != OrderStatus.deleted)
+            Card(
+              child: Column(
+                children: [
+                  ..._operators.map((operator) {
+                    final isSelected = _selectedOperatorIds.contains(operator.id);
+                    return CheckboxListTile(
+                      title: Text(operator.fullName),
+                      subtitle: operator.phone != null ? Text(operator.phone!) : null,
+                      value: isSelected,
+                      onChanged: _isSaving ? null : (value) {
+                        if (value == true) {
+                          // Проверяем, не добавлен ли уже оператор
+                          if (_selectedOperatorIds.contains(operator.id)) {
+                            // Оператор уже добавлен - показываем предупреждение
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Оператор ${operator.fullName} уже добавлен'),
+                                backgroundColor: Colors.orange,
+                                duration: const Duration(seconds: 2),
+                              ),
+                            );
+                            return;
+                          }
+                          setState(() {
+                            _selectedOperatorIds.add(operator.id);
+                          });
+                        } else {
+                          setState(() {
+                            _selectedOperatorIds.remove(operator.id);
+                          });
+                        }
+                        _saveChanges();
+                      },
+                    );
+                  }).toList(),
+                ],
+              ),
+            )
+          else
+            ...(_order!.operators ?? []).map((operator) {
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text('• ${operator.fullName}'),
+              );
+            }),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showNomenclatureDialog() async {
+    final result = await showDialog<List<OrderItem>>(
+      context: context,
+      builder: (context) => const NomenclatureSelectionDialog(),
+    );
+
+    if (result != null && result.isNotEmpty) {
+      setState(() {
+        _editableItems.addAll(result);
+      });
+      _saveChanges();
+    }
+  }
+
+  Future<void> _saveChanges() async {
+    if (_order == null || !_isAdmin()) return;
+    
+    setState(() {
+      _isSaving = true;
+    });
+    
+    try {
+      final orderService = ref.read(orderServiceProvider);
+      
+      double? totalAmount;
+      if (_totalAmountController.text.isNotEmpty) {
+        totalAmount = double.tryParse(_totalAmountController.text.trim());
+      }
+      
+      final request = OrderRequest(
+        address: _addressController.text.trim(),
+        startDt: _order!.startDt,
+        endDt: _order!.endDt,
+        description: _descriptionController.text.trim(),
+        status: _order!.status,
+        operatorIds: _selectedOperatorIds.isNotEmpty ? _selectedOperatorIds.toList() : null,
+        items: _editableItems.isNotEmpty ? _editableItems : null,
+        totalAmount: totalAmount,
+      );
+      
+      await orderService.updateOrder(widget.orderId, request);
+      await _loadOrder();
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Изменения сохранены')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Ошибка сохранения: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+        });
+      }
+    }
   }
 
   String _getStatusLabel(OrderStatus status) {
@@ -559,6 +947,50 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
         return 'Завершён';
       case OrderStatus.cancelled:
         return 'Отменён';
+      case OrderStatus.deleted:
+        return 'Удалён';
+    }
+  }
+  
+  Future<void> _deleteOrder() async {
+    if (_order == null) return;
+    
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Удалить заявку?'),
+        content: Text('Вы уверены, что хотите удалить заявку ${_order!.number}? Заявка будет переведена в статус "Удалён" и исключена из отчетов.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Отмена'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Удалить'),
+          ),
+        ],
+      ),
+    );
+    
+    if (confirm != true) return;
+    
+    try {
+      final orderService = ref.read(orderServiceProvider);
+      await orderService.deleteOrder(widget.orderId);
+      await _loadOrder();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Заявка удалена')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Ошибка: ${e.toString()}')),
+        );
+      }
     }
   }
 
@@ -654,6 +1086,12 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
               duration: Duration(seconds: 3),
             ),
           );
+          
+          // Предлагаем отправить в WhatsApp если есть номер клиента
+          final clientPhone = _order?.client?.phone;
+          if (clientPhone != null && clientPhone.isNotEmpty) {
+            await _showWhatsAppDialog(clientPhone);
+          }
         }
       } else {
         // Fallback: показываем PDF в просмотре
@@ -697,7 +1135,12 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
       final file = File(filePath);
       await file.writeAsBytes(pdfBytes);
       
-      // Показываем диалог с опциями: просмотр, сохранение
+      // Получаем номер телефона клиента для отправки в WhatsApp
+      final clientPhone = _order?.client?.phone;
+      final canSendWhatsApp = clientPhone != null && clientPhone.isNotEmpty;
+      final clientPhoneNonNull = clientPhone; // Для использования внутри if (canSendWhatsApp)
+      
+      // Показываем диалог с опциями: просмотр, сохранение, отправка в WhatsApp
       if (mounted) {
         await showDialog(
           context: context,
@@ -718,6 +1161,14 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                 },
                 child: const Text('Просмотр'),
               ),
+              if (canSendWhatsApp && clientPhoneNonNull != null)
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    _sendReceiptToWhatsApp(clientPhoneNonNull, filePath);
+                  },
+                  child: const Text('Отправить в WhatsApp'),
+                ),
               TextButton(
                 onPressed: () {
                   Navigator.pop(context);
@@ -749,6 +1200,82 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
           ),
         );
       }
+    }
+  }
+  
+  Future<void> _sendReceiptToWhatsApp(String phone, String filePath) async {
+    try {
+      // Нормализуем номер телефона (убираем все кроме цифр)
+      final normalizedPhone = phone.replaceAll(RegExp(r'[^\d]'), '');
+      // Если номер начинается с 8, заменяем на 7
+      final whatsappPhone = normalizedPhone.startsWith('8') 
+          ? '7${normalizedPhone.substring(1)}'
+          : normalizedPhone.startsWith('+') 
+              ? normalizedPhone.substring(1)
+              : normalizedPhone;
+      
+      // Формируем URL для WhatsApp
+      final whatsappUrl = 'https://wa.me/$whatsappPhone?text=Чек%20по%20заявке%20${_order!.number}';
+      
+      // Открываем WhatsApp через url_launcher
+      if (await canLaunchUrl(Uri.parse(whatsappUrl))) {
+        await launchUrl(Uri.parse(whatsappUrl), mode: LaunchMode.externalApplication);
+        
+        // После открытия WhatsApp, можно попробовать отправить файл
+        // Но для этого нужен другой подход - через share_plus или file_picker
+        // Пока просто открываем чат с текстом
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('WhatsApp открыт. Вручную отправьте файл: $filePath'),
+              duration: const Duration(seconds: 5),
+            ),
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Не удалось открыть WhatsApp. Убедитесь, что приложение установлено.'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Ошибка при отправке в WhatsApp: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+  
+  Future<void> _showWhatsAppDialog(String phone) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Отправить чек в WhatsApp?'),
+        content: Text('Отправить чек заказчику ${_order?.client?.name ?? ""} (${phone})?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Отмена'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Отправить'),
+          ),
+        ],
+      ),
+    );
+    
+    if (result == true && mounted) {
+      // Для веб просто открываем WhatsApp с текстом
+      await _sendReceiptToWhatsApp(phone, '');
     }
   }
 }

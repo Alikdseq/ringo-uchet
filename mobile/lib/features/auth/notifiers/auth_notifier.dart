@@ -51,45 +51,29 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 
   /// Проверка статуса аутентификации при инициализации
+  /// Оптимизировано: сначала загружаем из кэша, затем обновляем в фоне
   Future<void> _checkAuthStatus() async {
     final token = await _secureStorage.getAccessToken();
     if (token != null) {
-      try {
-        final user = await _authService.getCurrentUser();
-        state = state.copyWith(
-          isAuthenticated: true,
-          user: user,
-          clearError: true,
-        );
-        // Сохраняем данные пользователя
-        await _secureStorage.saveUserData(jsonEncode(user.toJson()));
-      } catch (e) {
-        // Если токен недействителен (401), пытаемся обновить
-        if (e is UnauthorizedException) {
-          final refreshed = await refreshToken();
-          if (refreshed) {
-            try {
-              final user = await _authService.getCurrentUser();
-              state = state.copyWith(
-                isAuthenticated: true,
-                user: user,
-                clearError: true,
-              );
-              await _secureStorage.saveUserData(jsonEncode(user.toJson()));
-              return;
-            } catch (e2) {
-              // Если и после refresh не получилось, очищаем
-            }
-          }
+      // СНАЧАЛА загружаем пользователя из кэша для мгновенного отображения
+      final cachedUserData = await _secureStorage.getUserData();
+      if (cachedUserData != null) {
+        try {
+          final userJson = jsonDecode(cachedUserData) as Map<String, dynamic>;
+          final cachedUser = UserInfo.fromJson(userJson);
+          // Устанавливаем состояние из кэша МГНОВЕННО
+          state = state.copyWith(
+            isAuthenticated: true,
+            user: cachedUser,
+            clearError: true,
+          );
+        } catch (e) {
+          // Если кэш поврежден, игнорируем и загружаем с сервера
         }
-        // Если токен недействителен, очищаем хранилище
-        await _secureStorage.clearAll();
-        state = state.copyWith(
-          isAuthenticated: false,
-          user: null,
-          clearError: true,
-        );
       }
+      
+      // Затем в ФОНЕ обновляем данные с сервера
+      _refreshUserInBackground();
     } else {
       // Если токена нет, просто устанавливаем состояние
       state = state.copyWith(
@@ -100,6 +84,47 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
+  /// Обновление пользователя в фоне (не блокирует UI)
+  Future<void> _refreshUserInBackground() async {
+    try {
+      final user = await _authService.getCurrentUser();
+      state = state.copyWith(
+        isAuthenticated: true,
+        user: user,
+        clearError: true,
+      );
+      // Сохраняем данные пользователя
+      await _secureStorage.saveUserData(jsonEncode(user.toJson()));
+    } catch (e) {
+      // Если токен недействителен (401), пытаемся обновить
+      if (e is UnauthorizedException) {
+        final refreshed = await refreshToken();
+        if (refreshed) {
+          try {
+            final user = await _authService.getCurrentUser();
+            state = state.copyWith(
+              isAuthenticated: true,
+              user: user,
+              clearError: true,
+            );
+            await _secureStorage.saveUserData(jsonEncode(user.toJson()));
+            return;
+          } catch (e2) {
+            // Если и после refresh не получилось, очищаем
+          }
+        }
+        // Если токен недействителен, очищаем хранилище
+        await _secureStorage.clearAll();
+        state = state.copyWith(
+          isAuthenticated: false,
+          user: null,
+          clearError: true,
+        );
+      }
+      // Для других ошибок просто игнорируем - используем кэш
+    }
+  }
+
   /// Логин по телефону/email/username и паролю
   Future<void> login(LoginRequest request) async {
     state = state.copyWith(isLoading: true, clearError: true);
@@ -107,36 +132,51 @@ class AuthNotifier extends StateNotifier<AuthState> {
     try {
       final authResponse = await _authService.login(request);
 
-      // Сохраняем токены
+      // Сохраняем токены СИНХРОННО перед любыми запросами
       await _secureStorage.saveAccessToken(authResponse.access);
       await _secureStorage.saveRefreshToken(authResponse.refresh);
 
-        // Сохраняем данные пользователя, если они есть
-        if (authResponse.user != null) {
-          await _secureStorage.saveUserData(jsonEncode(authResponse.user!.toJson()));
-        } else {
-          // Если user не пришёл в ответе, получаем его отдельно
-          try {
-            final user = await _authService.getCurrentUser();
-            await _secureStorage.saveUserData(jsonEncode(user.toJson()));
-            state = state.copyWith(
-              isAuthenticated: true,
-              user: user,
-              isLoading: false,
-              clearError: true,
-            );
-            return;
-          } catch (e) {
-            // Если не удалось получить user, продолжаем без него
-          }
-        }
+      // Проверяем что токен действительно сохранен перед запросами
+      final savedToken = await _secureStorage.getAccessToken();
+      if (savedToken != authResponse.access) {
+        // Если токен не сохранился, повторяем сохранение
+        await _secureStorage.saveAccessToken(authResponse.access);
+        await _secureStorage.saveRefreshToken(authResponse.refresh);
+      }
 
+      // Сохраняем данные пользователя, если они есть
+      if (authResponse.user != null) {
+        await _secureStorage.saveUserData(jsonEncode(authResponse.user!.toJson()));
         state = state.copyWith(
           isAuthenticated: true,
           user: authResponse.user,
           isLoading: false,
           clearError: true,
         );
+      } else {
+        // Если user не пришёл в ответе, получаем его отдельно ПОСЛЕ сохранения токена
+        try {
+          // Небольшая задержка для гарантии что токен сохранен в SecureStorage
+          await Future.delayed(const Duration(milliseconds: 50));
+          
+          final user = await _authService.getCurrentUser();
+          await _secureStorage.saveUserData(jsonEncode(user.toJson()));
+          state = state.copyWith(
+            isAuthenticated: true,
+            user: user,
+            isLoading: false,
+            clearError: true,
+          );
+        } catch (e) {
+          // Если не удалось получить user, продолжаем без него
+          state = state.copyWith(
+            isAuthenticated: true,
+            user: null,
+            isLoading: false,
+            clearError: true,
+          );
+        }
+      }
     } on AppException catch (e) {
       state = state.copyWith(
         isLoading: false,
@@ -181,15 +221,33 @@ class AuthNotifier extends StateNotifier<AuthState> {
     try {
       final authResponse = await _authService.verifyOTP(request);
 
-      // Сохраняем токены
+      // Сохраняем токены СИНХРОННО перед любыми запросами
       await _secureStorage.saveAccessToken(authResponse.access);
       await _secureStorage.saveRefreshToken(authResponse.refresh);
+
+      // Проверяем что токен действительно сохранен перед запросами
+      final savedToken = await _secureStorage.getAccessToken();
+      if (savedToken != authResponse.access) {
+        // Если токен не сохранился, повторяем сохранение
+        await _secureStorage.saveAccessToken(authResponse.access);
+        await _secureStorage.saveRefreshToken(authResponse.refresh);
+      }
 
       // Сохраняем данные пользователя
       if (authResponse.user != null) {
         await _secureStorage.saveUserData(jsonEncode(authResponse.user!.toJson()));
+        state = state.copyWith(
+          isAuthenticated: true,
+          user: authResponse.user,
+          isLoading: false,
+          clearError: true,
+        );
       } else {
+        // Если user не пришёл в ответе, получаем его отдельно ПОСЛЕ сохранения токена
         try {
+          // Небольшая задержка для гарантии что токен сохранен в SecureStorage
+          await Future.delayed(const Duration(milliseconds: 50));
+          
           final user = await _authService.getCurrentUser();
           await _secureStorage.saveUserData(jsonEncode(user.toJson()));
           state = state.copyWith(
@@ -198,18 +256,16 @@ class AuthNotifier extends StateNotifier<AuthState> {
             isLoading: false,
             clearError: true,
           );
-          return;
         } catch (e) {
-          // Продолжаем без user
+          // Если не удалось получить user, продолжаем без него
+          state = state.copyWith(
+            isAuthenticated: true,
+            user: null,
+            isLoading: false,
+            clearError: true,
+          );
         }
       }
-
-      state = state.copyWith(
-        isAuthenticated: true,
-        user: authResponse.user,
-        isLoading: false,
-        clearError: true,
-      );
     } on AppException catch (e) {
       state = state.copyWith(
         isLoading: false,

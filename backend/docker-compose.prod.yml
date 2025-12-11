@@ -18,6 +18,9 @@ services:
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
       - AWS_BUCKET=${AWS_BUCKET}
       - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}
+      - DJANGO_ALLOWED_HOSTS=ringoouchet.ru,www.ringoouchet.ru,91.229.90.72
+      - CSRF_TRUSTED_ORIGINS=https://ringoouchet.ru,https://www.ringoouchet.ru,http://ringoouchet.ru,http://www.ringoouchet.ru,http://91.229.90.72
+      - CORS_ALLOW_ALL_ORIGINS=true
       - ALLOWED_HOSTS=${ALLOWED_HOSTS:-*}
     command: gunicorn ringo_backend.wsgi:application --bind 0.0.0.0:8000 --workers 4 --timeout 120 --access-logfile - --error-logfile -
     healthcheck:

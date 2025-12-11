@@ -92,6 +92,10 @@ class OrderViewSet(viewsets.ModelViewSet):
                 # Остальные не видят ничего
                 qs = qs.none()
 
+        # Исключаем удаленные заявки для не-админов
+        if user.role not in ["admin", "manager"] and not user.is_superuser:
+            qs = qs.exclude(status=OrderStatus.DELETED)
+        
         status_param = self.request.query_params.get("status")
         if status_param:
             qs = qs.filter(status=status_param)
@@ -543,6 +547,86 @@ class OrderViewSet(viewsets.ModelViewSet):
         invoice, _ = Invoice.objects.get_or_create(order=order, defaults={"amount": order.total_amount})
         task = generate_invoice_pdf.delay(invoice.id)
         return Response({"invoice_id": invoice.id, "task_id": task.id})
+    
+    @extend_schema(
+        summary="Удалить заявку",
+        description="Перевести заявку в статус 'Удалён'. Требуется роль Admin/Manager.",
+        responses={
+            200: OrderSerializer,
+            400: {"description": "Недопустимый переход статуса"},
+            403: {"description": "Недостаточно прав"},
+        },
+        tags=["Orders"],
+    )
+    @action(detail=True, methods=["post"], url_path="delete")
+    def delete_order(self, request, pk=None):
+        """Переводит заявку в статус DELETED."""
+        order = self.get_object()
+        
+        # Проверяем права: только админ или менеджер могут удалять заявки
+        user = request.user
+        if user.role not in ["admin", "manager"] and not user.is_superuser:
+            return Response(
+                {"detail": "Недостаточно прав для удаления заявки"},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Проверяем, что заявка еще не удалена
+        if order.status == OrderStatus.DELETED:
+            return Response(
+                {"detail": "Заявка уже удалена"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            # Валидируем переход статуса
+            self._validate_status_transition(order.status, OrderStatus.DELETED)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Логируем изменение статуса
+        old_status = order.status
+        OrderStatusLog.objects.create(
+            order=order,
+            from_status=old_status,
+            to_status=OrderStatus.DELETED,
+            actor=request.user,
+            comment=f"Заявка удалена пользователем {request.user.get_full_name()}",
+        )
+        
+        # Меняем статус
+        order.status = OrderStatus.DELETED
+        order.save(update_fields=["status"])
+        
+        # Логирование в аудит
+        log_action(
+            actor=request.user,
+            action=AuditAction.STATUS_CHANGE,
+            entity_type="Order",
+            entity_id=str(order.id),
+            payload={
+                "from_status": old_status,
+                "to_status": OrderStatus.DELETED,
+                "comment": "Заявка удалена",
+            },
+            ip_address=self._get_client_ip(),
+            user_agent=request.META.get("HTTP_USER_AGENT", ""),
+            request_id=getattr(request, "request_id", None),
+        )
+        
+        # Уведомление об изменении статуса
+        notify_order_status_changed.delay(
+            str(order.id),
+            old_status,
+            OrderStatus.DELETED,
+        )
+        
+        # Очищаем кэш отчетов для обновления данных
+        from finance.api import clear_reports_cache
+        clear_reports_cache()
+        
+        serializer = OrderSerializer(order)
+        return Response(serializer.data)
 
     def _get_client_ip(self) -> str | None:
         """Получение IP адреса клиента"""
@@ -651,15 +735,16 @@ class OrderViewSet(viewsets.ModelViewSet):
     def _validate_status_transition(self, current: str, new: str) -> None:
         """Валидация перехода статуса. Завершение (COMPLETED) должно происходить через endpoint /complete/"""
         allowed = {
-            OrderStatus.CREATED: {OrderStatus.APPROVED, OrderStatus.CANCELLED},
-            OrderStatus.APPROVED: {OrderStatus.IN_PROGRESS, OrderStatus.CANCELLED},
-            OrderStatus.IN_PROGRESS: {OrderStatus.CANCELLED},  # COMPLETED только через /complete/
-            OrderStatus.COMPLETED: set(),
-            OrderStatus.CANCELLED: set(),
+            OrderStatus.CREATED: {OrderStatus.APPROVED, OrderStatus.CANCELLED, OrderStatus.DELETED},
+            OrderStatus.APPROVED: {OrderStatus.IN_PROGRESS, OrderStatus.CANCELLED, OrderStatus.DELETED},
+            OrderStatus.IN_PROGRESS: {OrderStatus.CANCELLED, OrderStatus.DELETED},  # COMPLETED только через /complete/
+            OrderStatus.COMPLETED: {OrderStatus.DELETED},  # Удаление возможно даже после завершения
+            OrderStatus.CANCELLED: {OrderStatus.DELETED},
+            OrderStatus.DELETED: set(),  # Из удаленного нельзя перейти в другой статус
         }
-        # Для обратной совместимости: если статус DRAFT, разрешаем переход в CREATED или CANCELLED
+        # Для обратной совместимости: если статус DRAFT, разрешаем переход в CREATED, CANCELLED или DELETED
         if current == OrderStatus.DRAFT:
-            allowed[OrderStatus.DRAFT] = {OrderStatus.CREATED, OrderStatus.CANCELLED}
+            allowed[OrderStatus.DRAFT] = {OrderStatus.CREATED, OrderStatus.CANCELLED, OrderStatus.DELETED}
         if new not in allowed.get(current, set()):
             if new == OrderStatus.COMPLETED and current == OrderStatus.IN_PROGRESS:
                 raise ValueError("Для завершения заявки используйте endpoint /complete/ с указанием элементов номенклатуры")

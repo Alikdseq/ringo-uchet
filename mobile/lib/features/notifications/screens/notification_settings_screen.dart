@@ -1,17 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/notification_providers.dart';
-import '../models/notification_models.dart';
 
 /// Экран настроек уведомлений
 class NotificationSettingsScreen extends ConsumerStatefulWidget {
   const NotificationSettingsScreen({super.key});
 
   @override
-  ConsumerState<NotificationSettingsScreen> createState() => _NotificationSettingsScreenState();
+  ConsumerState<NotificationSettingsScreen> createState() =>
+      _NotificationSettingsScreenState();
 }
 
-class _NotificationSettingsScreenState extends ConsumerState<NotificationSettingsScreen> {
+class _NotificationSettingsScreenState
+    extends ConsumerState<NotificationSettingsScreen> {
   bool _isSaving = false;
 
   @override
@@ -159,4 +160,3 @@ class _NotificationSettingsScreenState extends ConsumerState<NotificationSetting
     );
   }
 }
-

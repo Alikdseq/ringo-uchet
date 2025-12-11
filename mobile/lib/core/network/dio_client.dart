@@ -19,13 +19,17 @@ final dioClientProvider = Provider<Dio>((ref) {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
       },
+      // Оптимизация: включаем HTTP/2 и сжатие
+      persistentConnection: true,
+      followRedirects: true,
+      maxRedirects: 5,
     ),
   );
 
   // Interceptors
   dio.interceptors.add(AuthInterceptor(ref));
   dio.interceptors.add(ErrorInterceptor());
-  dio.interceptors.add(RetryInterceptor());
+  dio.interceptors.add(RetryInterceptor(dio: dio)); // Передаем тот же Dio клиент для retry
 
   // Логирование только для dev/stage
   if (config.enableLogging) {
