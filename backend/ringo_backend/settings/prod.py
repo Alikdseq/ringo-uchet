@@ -2,6 +2,12 @@ from __future__ import annotations
 
 from .base import *  # noqa
 
+# Переопределяем STATIC_ROOT и MEDIA_ROOT для production (чтобы использовать writable volumes)
+# В docker-compose.prod.yml смонтированы volumes ./staticfiles:/app/staticfiles и ./media:/app/media
+# Важно: устанавливаем как строки, а не Path объекты, чтобы избежать проблем с путями
+STATIC_ROOT = "/app/staticfiles"
+MEDIA_ROOT = "/app/media"
+
 DEBUG = False
 
 ALLOWED_HOSTS = [
@@ -51,8 +57,3 @@ else:
 
 # Разрешаем credentials для CORS
 CORS_ALLOW_CREDENTIALS = True
-
-# Переопределяем STATIC_ROOT для production (чтобы использовать writable volume)
-# В docker-compose.prod.yml смонтирован volume ./staticfiles:/app/staticfiles
-STATIC_ROOT = "/app/staticfiles"
-MEDIA_ROOT = "/app/media"
