@@ -29,7 +29,7 @@ class ServiceCategorySerializer(serializers.ModelSerializer):
 class ServiceItemSerializer(serializers.ModelSerializer):
     category = ServiceCategorySerializer(read_only=True)
     category_id = serializers.PrimaryKeyRelatedField(
-        queryset=ServiceCategory.objects.all(), source="category", write_only=True
+        queryset=ServiceCategory.objects.all(), source="category", write_only=True, required=True
     )
 
     class Meta:
@@ -48,6 +48,13 @@ class ServiceItemSerializer(serializers.ModelSerializer):
             "updated_at",
         )
         read_only_fields = ("created_at", "updated_at", "category")
+    
+    def validate(self, attrs):
+        """Валидация данных при создании/обновлении услуги"""
+        # Проверяем, что category_id указан при создании
+        if self.instance is None and 'category' not in attrs:
+            raise serializers.ValidationError({"category_id": "Категория обязательна для указания"})
+        return attrs
 
 
 class MaterialItemSerializer(serializers.ModelSerializer):

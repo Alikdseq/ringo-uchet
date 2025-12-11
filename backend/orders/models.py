@@ -24,7 +24,6 @@ class OrderStatus(models.TextChoices):
     IN_PROGRESS = "IN_PROGRESS", "В работе"
     COMPLETED = "COMPLETED", "Завершён"
     CANCELLED = "CANCELLED", "Отменён"
-    DELETED = "DELETED", "Удалён"
 
 
 class Order(TimeStampedModel):

@@ -362,7 +362,7 @@ class OrderSerializer(serializers.ModelSerializer):
             
             if user.role != "admin" and not user.is_superuser:
                 # Для не-админов проверяем, что заявка не завершена и не удалена
-                if instance.status in [OrderStatus.COMPLETED, OrderStatus.DELETED]:
+                if instance.status == OrderStatus.COMPLETED:
                     from rest_framework.exceptions import PermissionDenied
                     status_label = "завершенную" if instance.status == OrderStatus.COMPLETED else "удаленную"
                     error_msg = (
