@@ -56,8 +56,9 @@ def filter_range(queryset, field: str, date_from: Optional[str], date_to: Option
 
 
 def summary_report(date_from: Optional[str], date_to: Optional[str]) -> dict:
-    # Для доходов учитываем все заказы, кроме отмененных и удаленных
-    orders = Order.objects.exclude(status__in=[OrderStatus.CANCELLED, OrderStatus.DELETED])
+    # Для доходов учитываем все заказы, кроме отмененных
+    # Удаленные заявки больше не существуют в БД (hard delete)
+    orders = Order.objects.exclude(status=OrderStatus.CANCELLED)
     
     # Применяем фильтр по дате создания заказа
     # Если период указан, фильтруем по created_at
@@ -233,9 +234,12 @@ def summary_report(date_from: Optional[str], date_to: Optional[str]) -> dict:
 
 def equipment_report(date_from: Optional[str], date_to: Optional[str]) -> list[dict]:
     """Отчет по технике с правильным расчетом часов работы из start_dt и end_dt заказов."""
+    # Фильтруем только заявки, которые не отменены (удаленные заявки автоматически исключены через CASCADE)
     items = filter_range(
-        OrderItem.objects.filter(item_type=OrderItem.ItemType.EQUIPMENT)
-        .select_related("order"),
+        OrderItem.objects.filter(
+            item_type=OrderItem.ItemType.EQUIPMENT,
+            order__status__ne=OrderStatus.CANCELLED
+        ).select_related("order"),
         "order__start_dt",
         date_from,
         date_to,
@@ -348,7 +352,8 @@ def equipment_report(date_from: Optional[str], date_to: Optional[str]) -> list[d
 def employees_report(date_from: Optional[str], date_to: Optional[str]) -> list[dict]:
     """Отчет по сотрудникам с фильтрацией зарплат по дате заказа."""
     # Фильтруем заказы по периоду, если указан
-    orders = Order.objects.exclude(status__in=[OrderStatus.CANCELLED, OrderStatus.DELETED])
+    # Удаленные заявки больше не существуют в БД (hard delete)
+    orders = Order.objects.exclude(status=OrderStatus.CANCELLED)
     if date_from or date_to:
         orders = filter_range(orders, "created_at", date_from, date_to)
     

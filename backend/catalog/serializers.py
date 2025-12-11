@@ -54,8 +54,15 @@ class ServiceItemSerializer(serializers.ModelSerializer):
         # Проверяем, что category_id указан при создании
         if self.instance is None:
             # При создании category обязательна (через category_id)
-            if 'category' not in attrs and 'category_id' not in self.initial_data:
-                raise serializers.ValidationError({"category_id": "Категория обязательна для указания"})
+            # Проверяем в attrs (после обработки PrimaryKeyRelatedField) и в initial_data
+            if 'category' not in attrs:
+                # Если category не в attrs, проверяем initial_data
+                if hasattr(self, 'initial_data') and self.initial_data:
+                    category_id = self.initial_data.get('category_id')
+                    if not category_id:
+                        raise serializers.ValidationError({"category_id": "Категория обязательна для указания"})
+                else:
+                    raise serializers.ValidationError({"category_id": "Категория обязательна для указания"})
         return attrs
 
 
