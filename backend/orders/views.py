@@ -71,6 +71,37 @@ class OrderViewSet(viewsets.ModelViewSet):
     queryset = Order.objects.select_related("client", "manager", "operator").prefetch_related("items", "status_logs")
     serializer_class = OrderSerializer
     permission_classes = [IsOwnerOrManager]
+    
+    def perform_update(self, serializer: OrderSerializer) -> None:
+        """Обработка обновления заявки с логированием ошибок"""
+        try:
+            instance = serializer.instance
+            old_status = instance.status if instance else None
+            
+            # Сохраняем изменения
+            order = serializer.save()
+            
+            # Логируем изменение статуса, если оно произошло
+            if old_status and order.status != old_status:
+                log_action(
+                    actor=self.request.user,
+                    action=AuditAction.STATUS_CHANGE,
+                    entity_type="Order",
+                    entity_id=str(order.id),
+                    payload={
+                        "from_status": old_status,
+                        "to_status": order.status,
+                    },
+                    ip_address=self._get_client_ip(),
+                    user_agent=self.request.META.get("HTTP_USER_AGENT", ""),
+                    request_id=getattr(self.request, "request_id", None),
+                )
+        except Exception as e:
+            logger.error(f"Error updating order: {e}", exc_info=True)
+            logger.error(f"Request data: {self.request.data}")
+            logger.error(f"User: {self.request.user}")
+            logger.error(f"Instance: {serializer.instance}")
+            raise
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -102,20 +133,26 @@ class OrderViewSet(viewsets.ModelViewSet):
         return qs
 
     def perform_create(self, serializer: OrderSerializer) -> None:
-        order = serializer.save()
-        # Логирование создания заказа
-        log_action(
-            actor=self.request.user,
-            action=AuditAction.CREATE,
-            entity_type="Order",
-            entity_id=str(order.id),
-            payload={"number": order.number, "status": order.status, "total_amount": str(order.total_amount)},
-            ip_address=self._get_client_ip(),
-            user_agent=self.request.META.get("HTTP_USER_AGENT", ""),
-            request_id=getattr(self.request, "request_id", None),
-        )
-        # Уведомление о создании заказа
-        notify_order_created.delay(str(order.id))
+        try:
+            order = serializer.save()
+            # Логирование создания заказа
+            log_action(
+                actor=self.request.user,
+                action=AuditAction.CREATE,
+                entity_type="Order",
+                entity_id=str(order.id),
+                payload={"number": order.number, "status": order.status, "total_amount": str(order.total_amount)},
+                ip_address=self._get_client_ip(),
+                user_agent=self.request.META.get("HTTP_USER_AGENT", ""),
+                request_id=getattr(self.request, "request_id", None),
+            )
+            # Уведомление о создании заказа
+            notify_order_created.delay(str(order.id))
+        except Exception as e:
+            logger.error(f"Error creating order: {e}", exc_info=True)
+            logger.error(f"Request data: {self.request.data}")
+            logger.error(f"User: {self.request.user}")
+            raise
 
     @extend_schema(
         summary="Изменить статус заявки",

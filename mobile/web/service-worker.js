@@ -2,9 +2,12 @@
 // Кэширует статические ресурсы и API ответы для офлайн работы
 // Улучшено для работы на мобильном интернете с таймаутами и retry
 
-const CACHE_NAME = 'ringo-uchet-v5';
-const STATIC_CACHE_NAME = 'ringo-static-v5';
-const API_CACHE_NAME = 'ringo-api-v5';
+const CACHE_NAME = 'ringo-uchet-v6';
+const STATIC_CACHE_NAME = 'ringo-static-v6';
+const API_CACHE_NAME = 'ringo-api-v6';
+
+// Время жизни кэша API запросов (в миллисекундах) - 30 секунд
+const API_CACHE_TTL = 30000;
 
 // Таймауты для запросов (в миллисекундах)
 const NETWORK_TIMEOUT = 10000; // 10 секунд для обычных запросов
@@ -28,7 +31,7 @@ const STATIC_ASSETS = [
 
 // Установка Service Worker
 self.addEventListener('install', (event) => {
-  console.log('[Service Worker] Installing v5...');
+  console.log('[Service Worker] Installing v6...');
   event.waitUntil(
     caches.open(STATIC_CACHE_NAME).then((cache) => {
       console.log('[Service Worker] Caching static assets');
@@ -43,7 +46,7 @@ self.addEventListener('install', (event) => {
 
 // Активация Service Worker
 self.addEventListener('activate', (event) => {
-  console.log('[Service Worker] Activating v5...');
+  console.log('[Service Worker] Activating v6...');
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
@@ -253,7 +256,6 @@ self.addEventListener('fetch', (event) => {
           // Для других методов (не должно доходить сюда, но на всякий случай)
           throw error;
         })
-    )
     );
     return;
   }
@@ -337,6 +339,23 @@ function isAPIRequest(url) {
     url.includes('/notifications/')
   );
 }
+
+// Обработка сообщений от основного потока для инвалидации кэша
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'CLEAR_API_CACHE') {
+    console.log('[Service Worker] Clearing API cache after data modification');
+    caches.open(API_CACHE_NAME).then((cache) => {
+      cache.keys().then((keys) => {
+        keys.forEach((key) => {
+          // Очищаем кэш для всех API запросов
+          if (isAPIRequest(key.url)) {
+            cache.delete(key);
+          }
+        });
+      });
+    });
+  }
+});
 
 // Фоновая синхронизация (для будущего использования)
 self.addEventListener('sync', (event) => {

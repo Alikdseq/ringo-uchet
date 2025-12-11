@@ -97,6 +97,7 @@ const _$OrderStatusEnumMap = {
   OrderStatus.inProgress: 'IN_PROGRESS',
   OrderStatus.completed: 'COMPLETED',
   OrderStatus.cancelled: 'CANCELLED',
+  OrderStatus.deleted: 'DELETED',
 };
 
 OrderItem _$OrderItemFromJson(Map<String, dynamic> json) => OrderItem(
@@ -247,6 +248,7 @@ OrderRequest _$OrderRequestFromJson(Map<String, dynamic> json) => OrderRequest(
           ?.map((e) => (e as num).toInt())
           .toList(),
       prepaymentAmount: (json['prepayment_amount'] as num?)?.toDouble(),
+      totalAmount: (json['total_amount'] as num?)?.toDouble(),
       items: (json['items'] as List<dynamic>?)
           ?.map((e) => OrderItem.fromJson(e as Map<String, dynamic>))
           .toList(),
@@ -267,6 +269,7 @@ Map<String, dynamic> _$OrderRequestToJson(OrderRequest instance) =>
       'operator_id': instance.operatorId,
       'operator_ids': instance.operatorIds,
       'prepayment_amount': instance.prepaymentAmount,
+      'total_amount': instance.totalAmount,
       'items': instance.items,
     };
 

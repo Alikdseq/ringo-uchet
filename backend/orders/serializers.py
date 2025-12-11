@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from decimal import Decimal
 from typing import Any
 
@@ -14,6 +15,8 @@ from users.models import User
 
 from .models import Order, OrderItem, OrderStatus, OrderStatusLog, PhotoEvidence
 from .services.pricing import calculate_order_total, _get_duration_hours, _round_half_hour
+
+logger = logging.getLogger(__name__)
 
 
 class OrderItemSerializer(serializers.ModelSerializer):
@@ -281,89 +284,113 @@ class OrderSerializer(serializers.ModelSerializer):
         return value
 
     def create(self, validated_data: dict[str, Any]) -> Order:
-        # Извлекаем items из validated_data (если переданы)
-        items_data = validated_data.pop("items", None)
-        # Извлекаем operators из validated_data
-        operators = validated_data.pop("operators", [])
-        # Извлекаем total_amount если указан (примерная стоимость)
-        total_amount = validated_data.pop("total_amount", None)
-        user = self.context["request"].user
-        validated_data.setdefault("created_by", user)
-        # Если manager не указан явно, устанавливаем текущего пользователя как manager
-        # Это нужно для того, чтобы создатель заявки мог ее видеть в списке
-        if not validated_data.get("manager"):
-            validated_data["manager"] = user
-        # Генерируем номер заказа, если он не передан или пустой
-        number = validated_data.get("number", "").strip()
-        if not number:
-            validated_data["number"] = self._generate_order_number()
-        # Устанавливаем статус CREATED по умолчанию, если не указан
-        if not validated_data.get("status"):
-            validated_data["status"] = OrderStatus.CREATED
-        # end_dt не устанавливается при создании
-        validated_data.pop("end_dt", None)
-        with transaction.atomic():
-            order = Order.objects.create(**validated_data)
-            # Добавляем операторов
-            if operators:
-                order.operators.set(operators)
-            # Для обратной совместимости: если указан operator_id, добавляем его в operators
-            if validated_data.get("operator"):
-                order.operators.add(validated_data["operator"])
-            # Добавляем items если они переданы при создании
-            if items_data:
-                self._upsert_items(order, items_data)
-                # Пересчитываем общую стоимость если items добавлены
-                order.total_amount = calculate_order_total(order)
-            elif total_amount is not None:
-                # Если указана примерная стоимость без items, используем её
-                order.total_amount = Decimal(str(total_amount))
-            else:
-                # По умолчанию 0
-                order.total_amount = Decimal("0.00")
-            order.save(update_fields=["total_amount"])
-        return order
+        try:
+            # Извлекаем items из validated_data (если переданы)
+            items_data = validated_data.pop("items", None)
+            # Извлекаем operators из validated_data
+            operators = validated_data.pop("operators", [])
+            # Извлекаем total_amount если указан (примерная стоимость)
+            total_amount = validated_data.pop("total_amount", None)
+            user = self.context["request"].user
+            validated_data.setdefault("created_by", user)
+            # Если manager не указан явно, устанавливаем текущего пользователя как manager
+            # Это нужно для того, чтобы создатель заявки мог ее видеть в списке
+            if not validated_data.get("manager"):
+                validated_data["manager"] = user
+            # Генерируем номер заказа, если он не передан или пустой
+            number = validated_data.get("number", "").strip()
+            if not number:
+                validated_data["number"] = self._generate_order_number()
+            # Устанавливаем статус CREATED по умолчанию, если не указан
+            if not validated_data.get("status"):
+                validated_data["status"] = OrderStatus.CREATED
+            # end_dt не устанавливается при создании
+            validated_data.pop("end_dt", None)
+            
+            logger.info(f"Creating order. User: {user.id}, Data keys: {list(validated_data.keys())}")
+            
+            with transaction.atomic():
+                order = Order.objects.create(**validated_data)
+                # Добавляем операторов
+                if operators:
+                    order.operators.set(operators)
+                # Для обратной совместимости: если указан operator_id, добавляем его в operators
+                if validated_data.get("operator"):
+                    order.operators.add(validated_data["operator"])
+                # Добавляем items если они переданы при создании
+                if items_data:
+                    self._upsert_items(order, items_data)
+                    # Пересчитываем общую стоимость если items добавлены
+                    order.total_amount = calculate_order_total(order)
+                elif total_amount is not None:
+                    # Если указана примерная стоимость без items, используем её
+                    order.total_amount = Decimal(str(total_amount))
+                else:
+                    # По умолчанию 0
+                    order.total_amount = Decimal("0.00")
+                order.save(update_fields=["total_amount"])
+            logger.info(f"Order created successfully: {order.id}")
+            return order
+        except Exception as e:
+            logger.error(f"Error creating order: {e}", exc_info=True)
+            logger.error(f"Validated data keys: {list(validated_data.keys()) if validated_data else 'None'}")
+            raise
 
     def update(self, instance: Order, validated_data: dict[str, Any]) -> Order:
-        # Проверяем права: только админ может редактировать заявки на любом этапе
-        user = self.context["request"].user
-        if user.role != "admin" and not user.is_superuser:
-            # Для не-админов проверяем, что заявка не завершена и не удалена
-            if instance.status in [OrderStatus.COMPLETED, OrderStatus.DELETED]:
-                from rest_framework.exceptions import PermissionDenied
-                raise PermissionDenied("Только администратор может редактировать завершенные или удаленные заявки")
-        
-        # Извлекаем many-to-many поля и другие специальные поля ДО setattr
-        items_data = validated_data.pop("items", None)
-        total_amount = validated_data.pop("total_amount", None)
-        operators = validated_data.pop("operators", None)  # Извлекаем operators (many-to-many)
-        
-        # Обновляем обычные поля
-        for attr, value in validated_data.items():
-            setattr(instance, attr, value)
-        
-        with transaction.atomic():
-            instance.save()
+        try:
+            # Проверяем права: только админ может редактировать заявки на любом этапе
+            user = self.context["request"].user
+            logger.info(f"Updating order {instance.id}. User: {user.id}, Role: {user.role}, Current status: {instance.status}")
             
-            # Обновляем операторов если они переданы
-            if operators is not None:
-                instance.operators.set(operators)
+            if user.role != "admin" and not user.is_superuser:
+                # Для не-админов проверяем, что заявка не завершена и не удалена
+                if instance.status in [OrderStatus.COMPLETED, OrderStatus.DELETED]:
+                    from rest_framework.exceptions import PermissionDenied
+                    status_label = "завершенную" if instance.status == OrderStatus.COMPLETED else "удаленную"
+                    error_msg = (
+                        f"Недостаточно прав для редактирования {status_label} заявку. "
+                        f"Текущий статус: {instance.status}. "
+                        f"Только администратор может редактировать завершенные или удаленные заявки."
+                    )
+                    logger.warning(f"Permission denied: {error_msg}")
+                    raise PermissionDenied(error_msg)
             
-            # Обновляем items если они переданы
-            if items_data is not None:
-                instance.items.all().delete()
-                self._upsert_items(instance, items_data)
+            # Извлекаем many-to-many поля и другие специальные поля ДО setattr
+            items_data = validated_data.pop("items", None)
+            total_amount = validated_data.pop("total_amount", None)
+            operators = validated_data.pop("operators", None)  # Извлекаем operators (many-to-many)
             
-            # Пересчитываем total_amount если items изменены, иначе используем переданное значение
-            if items_data is not None:
-                instance.total_amount = calculate_order_total(instance)
-            elif total_amount is not None:
-                instance.total_amount = Decimal(str(total_amount))
-            else:
-                # Если items не изменены и total_amount не указан, пересчитываем из существующих items
-                instance.total_amount = calculate_order_total(instance)
-            instance.save(update_fields=["total_amount"])
-        return instance
+            # Обновляем обычные поля
+            for attr, value in validated_data.items():
+                setattr(instance, attr, value)
+            
+            with transaction.atomic():
+                instance.save()
+                
+                # Обновляем операторов если они переданы
+                if operators is not None:
+                    instance.operators.set(operators)
+                
+                # Обновляем items если они переданы
+                if items_data is not None:
+                    instance.items.all().delete()
+                    self._upsert_items(instance, items_data)
+                
+                # Пересчитываем total_amount если items изменены, иначе используем переданное значение
+                if items_data is not None:
+                    instance.total_amount = calculate_order_total(instance)
+                elif total_amount is not None:
+                    instance.total_amount = Decimal(str(total_amount))
+                else:
+                    # Если items не изменены и total_amount не указан, пересчитываем из существующих items
+                    instance.total_amount = calculate_order_total(instance)
+                instance.save(update_fields=["total_amount"])
+            logger.info(f"Order {instance.id} updated successfully")
+            return instance
+        except Exception as e:
+            logger.error(f"Error updating order {instance.id}: {e}", exc_info=True)
+            logger.error(f"Validated data keys: {list(validated_data.keys()) if validated_data else 'None'}")
+            raise
 
     def _upsert_items(self, order: Order, items_data: list[dict[str, Any]]) -> None:
         """Создает позиции заказа, автоматически рассчитывая quantity для техники из времени работы."""
