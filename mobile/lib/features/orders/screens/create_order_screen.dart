@@ -506,10 +506,11 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
         totalAmount: totalAmount, // Примерная стоимость
       );
 
-      await orderService.createOrder(request);
+      final createdOrder = await orderService.createOrder(request);
 
       if (mounted) {
-        Navigator.pop(context, true);
+        // Возвращаем созданную заявку для немедленного обновления списка
+        Navigator.pop(context, createdOrder);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Заявка создана')),
         );

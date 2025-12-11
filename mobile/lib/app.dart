@@ -234,7 +234,9 @@ class _HomeScreenState extends ConsumerState<_HomeScreen> {
     availableTitles.add('Заявки');
     availableScreens.add(ScreenWrapper(
       key: ValueKey('orders_list_$_ordersRefreshKey'),
-      builder: (_) => const OrdersListScreen(),
+      builder: (_) => OrdersListScreen(
+        refreshKey: _ordersRefreshKey,
+      ),
     ));
     availableBottomNavItems.add(const BottomNavigationBarItem(
       icon: Icon(Icons.list_alt),
@@ -438,9 +440,10 @@ class _HomeScreenState extends ConsumerState<_HomeScreen> {
                   ),
                 );
                 // Обновляем список заявок после создания
-                if (result == true && mounted) {
+                // result может быть Order (созданная заявка) или true (успешное создание)
+                if ((result != null && result != false) && mounted) {
                   setState(() {
-                    // Обновляем ключ для принудительного пересоздания OrdersListScreen
+                    // Обновляем ключ для принудительного обновления OrdersListScreen
                     _ordersRefreshKey++;
                   });
                 }

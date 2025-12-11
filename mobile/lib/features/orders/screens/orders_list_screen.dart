@@ -11,7 +11,9 @@ import 'order_detail_screen.dart';
 
 /// Экран списка заявок
 class OrdersListScreen extends ConsumerStatefulWidget {
-  const OrdersListScreen({super.key});
+  final int? refreshKey; // Ключ для принудительного обновления
+  
+  const OrdersListScreen({super.key, this.refreshKey});
 
   @override
   ConsumerState<OrdersListScreen> createState() => _OrdersListScreenState();
@@ -39,6 +41,15 @@ class _OrdersListScreenState extends ConsumerState<OrdersListScreen> with Single
     // +1 для вкладки "Все"
     _tabController = TabController(length: _statusOrder.length + 1, vsync: this);
     _loadOrders();
+  }
+  
+  @override
+  void didUpdateWidget(OrdersListScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Если изменился refreshKey, обновляем список
+    if (widget.refreshKey != null && widget.refreshKey != oldWidget.refreshKey) {
+      _loadOrders(useCache: false); // Принудительно загружаем с сервера
+    }
   }
 
   // Публичный метод для обновления списка извне
@@ -118,10 +129,7 @@ class _OrdersListScreenState extends ConsumerState<OrdersListScreen> with Single
           }).toList();
         }
         
-        // Исключаем удаленные заявки для не-админов
-        if (user?.role != 'admin' && user?.role != 'manager') {
-          orders = orders.where((order) => order.status != OrderStatus.deleted).toList();
-        }
+        // Удаленные заявки больше не существуют в БД, фильтрация не нужна
         
         setState(() {
           _allOrders = orders;

@@ -112,12 +112,18 @@ class OrderService {
       final response = await _dio.post('/orders/', data: requestData);
       final order = Order.fromJson(response.data);
 
-      // Обновляем кэш
+      // Обновляем кэш - добавляем новую заявку в начало списка
       final cacheService = _ref.read(cacheServiceProvider);
       final cached = await cacheService.getCachedOrders();
       if (cached != null) {
+        // Удаляем заявку с таким же ID, если она уже есть (на случай дубликатов)
+        cached.removeWhere((o) => (o as Map)['id'] == order.id);
+        // Добавляем новую заявку в начало списка
         cached.insert(0, order.toJson());
         await cacheService.cacheOrders(cached);
+      } else {
+        // Если кэша нет, создаем новый с этой заявкой
+        await cacheService.cacheOrders([order.toJson()]);
       }
 
       return order;
