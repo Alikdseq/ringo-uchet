@@ -72,16 +72,25 @@ class BaseReportView(APIView):
                 {"detail": "Доступ к отчетам разрешен только администраторам"},
                 status=status.HTTP_403_FORBIDDEN
             )
-        params = request.query_params
-        cache_key = self._build_cache_key(request.path, params)
-        data = cache.get(cache_key)
-        if data is None:
-            data = self.generate_data(params)
-            cache.set(cache_key, data, timeout=60)
-        export_format = params.get("export")
-        if export_format:
-            return self.export_response(data, export_format)
-        return Response(data)
+        try:
+            params = request.query_params
+            cache_key = self._build_cache_key(request.path, params)
+            data = cache.get(cache_key)
+            if data is None:
+                data = self.generate_data(params)
+                cache.set(cache_key, data, timeout=60)
+            export_format = params.get("export")
+            if export_format:
+                return self.export_response(data, export_format)
+            return Response(data)
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error generating report: {e}", exc_info=True)
+            return Response(
+                {"detail": f"Ошибка при генерации отчета: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
     def generate_data(self, params):
         raise NotImplementedError
