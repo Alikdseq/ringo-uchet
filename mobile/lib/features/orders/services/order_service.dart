@@ -171,7 +171,26 @@ class OrderService {
   Future<Order> updateOrder(String id, OrderRequest request) async {
     try {
       final response = await _dio.patch('/orders/$id/', data: request.toJson());
-      return Order.fromJson(response.data);
+      final order = Order.fromJson(response.data);
+
+      // Обновляем кэш - обновляем заявку в списке
+      final cacheService = _ref.read(cacheServiceProvider);
+      final cached = await cacheService.getCachedOrders();
+      if (cached != null) {
+        // Находим индекс заявки с таким же ID
+        final index = cached.indexWhere((o) => (o as Map)['id'] == order.id);
+        if (index != -1) {
+          // Обновляем заявку в кэше
+          cached[index] = order.toJson();
+          await cacheService.cacheOrders(cached);
+        } else {
+          // Если заявки нет в кэше, добавляем в начало
+          cached.insert(0, order.toJson());
+          await cacheService.cacheOrders(cached);
+        }
+      }
+
+      return order;
     } on DioException catch (e) {
       throw _handleError(e);
     } catch (e) {
