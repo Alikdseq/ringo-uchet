@@ -285,15 +285,28 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
             _buildNomenclatureSelection(),
             const SizedBox(height: 24),
 
-            // Раздел: Примерная стоимость
-            _buildSectionHeader('Примерная стоимость'),
+            // Раздел: Примерная стоимость (необязательно)
+            Row(
+              children: [
+                _buildSectionHeader('Примерная стоимость'),
+                const SizedBox(width: 8),
+                Text(
+                  '(необязательно)',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Colors.grey[600],
+                        fontStyle: FontStyle.italic,
+                      ),
+                ),
+              ],
+            ),
             const SizedBox(height: 8),
             TextFormField(
               controller: _totalAmountController,
               decoration: const InputDecoration(
                 labelText: 'Примерная стоимость (₽)',
-                hintText: 'Введите примерную стоимость',
+                hintText: 'Введите примерную стоимость (можно оставить пустым)',
                 border: OutlineInputBorder(),
+                helperText: 'Можно создать заявку только с примерной стоимостью или только с номенклатурой',
               ),
               keyboardType: TextInputType.number,
               inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}'))],
