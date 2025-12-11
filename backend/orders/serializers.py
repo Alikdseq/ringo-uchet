@@ -287,10 +287,17 @@ class OrderSerializer(serializers.ModelSerializer):
         try:
             # Извлекаем items из validated_data (если переданы)
             items_data = validated_data.pop("items", None)
+            # Если items_data - пустой список, считаем его как None (нет items)
+            if items_data is not None and len(items_data) == 0:
+                items_data = None
+                logger.info("Empty items list received, treating as None")
+            
             # Извлекаем operators из validated_data
             operators = validated_data.pop("operators", [])
             # Извлекаем total_amount если указан (примерная стоимость)
             total_amount = validated_data.pop("total_amount", None)
+            
+            logger.info(f"Creating order - items_data: {items_data is not None and len(items_data) if items_data else 0} items, total_amount: {total_amount}")
             user = self.context["request"].user
             validated_data.setdefault("created_by", user)
             # Если manager не указан явно, устанавливаем текущего пользователя как manager
@@ -368,8 +375,15 @@ class OrderSerializer(serializers.ModelSerializer):
             
             # Извлекаем many-to-many поля и другие специальные поля ДО setattr
             items_data = validated_data.pop("items", None)
+            # Если items_data - пустой список, считаем его как None (нет items для обновления)
+            if items_data is not None and len(items_data) == 0:
+                items_data = None
+                logger.info("Empty items list received in update, treating as None")
+            
             total_amount = validated_data.pop("total_amount", None)
             operators = validated_data.pop("operators", None)  # Извлекаем operators (many-to-many)
+            
+            logger.info(f"Updating order {instance.id} - items_data: {items_data is not None and len(items_data) if items_data else 0} items, total_amount: {total_amount}, current_total: {instance.total_amount}")
             
             # Сохраняем текущую стоимость как базу для расчета
             current_total = instance.total_amount or Decimal("0.00")
