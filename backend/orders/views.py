@@ -355,92 +355,92 @@ class OrderViewSet(viewsets.ModelViewSet):
                             if item_type_str == "equipment":
                                 try:
                                     equipment = Equipment.objects.get(id=item_data["ref_id"])
-                                
-                                # Получаем смены и часы из metadata (введенные пользователем)
-                                metadata = item_data.get("metadata", {})
-                                if not isinstance(metadata, dict):
-                                    metadata = {}
-                                shifts = Decimal(str(metadata.get("shifts", 0) or 0))
-                                hours = Decimal(str(metadata.get("hours", 0) or 0))
-                                
-                                # Сохраняем информацию о сменах и часах в metadata
-                                item_data["metadata"] = {
-                                    **metadata,
-                                    "shifts": float(shifts),
-                                    "hours": float(hours),
-                                    "daily_rate": float(equipment.daily_rate or 0),
-                                }
-                                
-                                # Устанавливаем обязательные поля с правильными типами
-                                # ВАЖНО: quantity для техники НЕ преобразуем смены в часы!
-                                # Используем сумму смен и часов только для визуального представления
-                                # Реальные расчеты выполняются через metadata (shifts, hours, daily_rate)
-                                # и line_total из сериализатора
-                                quantity_for_display = shifts + hours  # Просто сумма, не преобразование!
-                                
-                                # Получаем расходы на топливо для данной техники
-                                fuel_expense = item_data.get("fuel_expense")
-                                fuel_expense_decimal = None
-                                if fuel_expense is not None:
-                                    fuel_expense_decimal = Decimal(str(fuel_expense))
-                                
-                                # Получаем расходы на ремонт техники
-                                repair_expense = item_data.get("repair_expense")
-                                repair_expense_decimal = None
-                                if repair_expense is not None:
-                                    repair_expense_decimal = Decimal(str(repair_expense))
-                                
-                                OrderItem.objects.create(
-                                    order=order,
-                                    item_type=OrderItem.ItemType.EQUIPMENT,
-                                    ref_id=item_data["ref_id"],
-                                    name_snapshot=equipment.name,
-                                    quantity=Decimal(str(quantity_for_display)),
-                                    unit="hour",  # Единица для совместимости, но не используется для расчетов
-                                    unit_price=Decimal(str(equipment.hourly_rate or 0)),
-                                    tax_rate=Decimal(str(item_data.get("tax_rate", 0.0))),
-                                    discount=Decimal(str(item_data.get("discount", 0.0))),
-                                    fuel_expense=fuel_expense_decimal,
-                                    repair_expense=repair_expense_decimal,
-                                    metadata=item_data["metadata"],
-                                )
-                            except Equipment.DoesNotExist:
-                                logger.warning(f"Equipment with id {item_data.get('ref_id')} not found, skipping item")
-                                continue
-                            except Exception as e:
-                                logger.error(f"Error creating equipment item: {e}", exc_info=True)
-                                raise
+                                    
+                                    # Получаем смены и часы из metadata (введенные пользователем)
+                                    metadata = item_data.get("metadata", {})
+                                    if not isinstance(metadata, dict):
+                                        metadata = {}
+                                    shifts = Decimal(str(metadata.get("shifts", 0) or 0))
+                                    hours = Decimal(str(metadata.get("hours", 0) or 0))
+                                    
+                                    # Сохраняем информацию о сменах и часах в metadata
+                                    item_data["metadata"] = {
+                                        **metadata,
+                                        "shifts": float(shifts),
+                                        "hours": float(hours),
+                                        "daily_rate": float(equipment.daily_rate or 0),
+                                    }
+                                    
+                                    # Устанавливаем обязательные поля с правильными типами
+                                    # ВАЖНО: quantity для техники НЕ преобразуем смены в часы!
+                                    # Используем сумму смен и часов только для визуального представления
+                                    # Реальные расчеты выполняются через metadata (shifts, hours, daily_rate)
+                                    # и line_total из сериализатора
+                                    quantity_for_display = shifts + hours  # Просто сумма, не преобразование!
+                                    
+                                    # Получаем расходы на топливо для данной техники
+                                    fuel_expense = item_data.get("fuel_expense")
+                                    fuel_expense_decimal = None
+                                    if fuel_expense is not None:
+                                        fuel_expense_decimal = Decimal(str(fuel_expense))
+                                    
+                                    # Получаем расходы на ремонт техники
+                                    repair_expense = item_data.get("repair_expense")
+                                    repair_expense_decimal = None
+                                    if repair_expense is not None:
+                                        repair_expense_decimal = Decimal(str(repair_expense))
+                                    
+                                    OrderItem.objects.create(
+                                        order=order,
+                                        item_type=OrderItem.ItemType.EQUIPMENT,
+                                        ref_id=item_data["ref_id"],
+                                        name_snapshot=equipment.name,
+                                        quantity=Decimal(str(quantity_for_display)),
+                                        unit="hour",  # Единица для совместимости, но не используется для расчетов
+                                        unit_price=Decimal(str(equipment.hourly_rate or 0)),
+                                        tax_rate=Decimal(str(item_data.get("tax_rate", 0.0))),
+                                        discount=Decimal(str(item_data.get("discount", 0.0))),
+                                        fuel_expense=fuel_expense_decimal,
+                                        repair_expense=repair_expense_decimal,
+                                        metadata=item_data["metadata"],
+                                    )
+                                except Equipment.DoesNotExist:
+                                    logger.warning(f"Equipment with id {item_data.get('ref_id')} not found, skipping item")
+                                    continue
+                                except Exception as e:
+                                    logger.error(f"Error creating equipment item: {e}", exc_info=True)
+                                    raise
                             # Для материалов (грунт, инструменты, навески) получаем данные из MaterialItem
                             elif item_type_str == "material":
                                 try:
                                     from catalog.models import MaterialItem
                                     material = MaterialItem.objects.get(id=item_data["ref_id"])
-                                
-                                # Сохраняем категорию материала в metadata для правильного отображения
-                                metadata = item_data.get("metadata", {})
-                                if not isinstance(metadata, dict):
-                                    metadata = {}
-                                metadata["material_category"] = material.category
-                                
-                                # Устанавливаем обязательные поля с правильными типами
-                                OrderItem.objects.create(
-                                    order=order,
-                                    item_type=OrderItem.ItemType.MATERIAL,
-                                    ref_id=item_data["ref_id"],
-                                    name_snapshot=material.name,
-                                    quantity=Decimal(str(item_data.get("quantity", 1.0))),
-                                    unit=material.unit,
-                                    unit_price=Decimal(str(material.price)),
-                                    tax_rate=Decimal(str(item_data.get("tax_rate", 0.0))),
-                                    discount=Decimal(str(item_data.get("discount", 0.0))),
-                                    metadata=metadata,
-                                )
-                            except MaterialItem.DoesNotExist:
-                                logger.warning(f"MaterialItem with id {item_data.get('ref_id')} not found, skipping item")
-                                continue
-                            except Exception as e:
-                                logger.error(f"Error creating material item: {e}", exc_info=True)
-                                raise
+                                    
+                                    # Сохраняем категорию материала в metadata для правильного отображения
+                                    metadata = item_data.get("metadata", {})
+                                    if not isinstance(metadata, dict):
+                                        metadata = {}
+                                    metadata["material_category"] = material.category
+                                    
+                                    # Устанавливаем обязательные поля с правильными типами
+                                    OrderItem.objects.create(
+                                        order=order,
+                                        item_type=OrderItem.ItemType.MATERIAL,
+                                        ref_id=item_data["ref_id"],
+                                        name_snapshot=material.name,
+                                        quantity=Decimal(str(item_data.get("quantity", 1.0))),
+                                        unit=material.unit,
+                                        unit_price=Decimal(str(material.price)),
+                                        tax_rate=Decimal(str(item_data.get("tax_rate", 0.0))),
+                                        discount=Decimal(str(item_data.get("discount", 0.0))),
+                                        metadata=metadata,
+                                    )
+                                except MaterialItem.DoesNotExist:
+                                    logger.warning(f"MaterialItem with id {item_data.get('ref_id')} not found, skipping item")
+                                    continue
+                                except Exception as e:
+                                    logger.error(f"Error creating material item: {e}", exc_info=True)
+                                    raise
                             else:
                                 # Для других типов (если есть) просто создаем как есть
                                 item_type_enum = OrderItem.ItemType.EQUIPMENT  # По умолчанию
