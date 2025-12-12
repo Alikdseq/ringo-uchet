@@ -498,11 +498,12 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                             const SizedBox(width: 8),
                             IconButton(
                               icon: const Icon(Icons.delete, size: 20, color: Colors.red),
-                              onPressed: _isSaving ? null : () {
+                              onPressed: _isSaving ? null : () async {
                                 setState(() {
                                   _editableItems.removeAt(index);
                                 });
-                                _saveChanges();
+                                // При удалении item явно отправляем обновленный список items
+                                await _saveChangesWithItems();
                               },
                               tooltip: 'Удалить',
                             ),
@@ -898,8 +899,8 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
         totalAmount = double.tryParse(_totalAmountController.text.trim());
       }
       
-      // При добавлении items отправляем их явно (даже если они совпадают с оригинальными)
-      // Это гарантирует, что сервер прибавит стоимость новых items к примерной стоимости
+      // При изменении items (добавлении или удалении) отправляем их явно
+      // Пустой список означает удаление всех items
       final request = OrderRequest(
         address: _addressController.text.trim(),
         startDt: _order!.startDt,
@@ -907,7 +908,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
         description: _descriptionController.text.trim(),
         status: _order!.status,
         operatorIds: _selectedOperatorIds.isNotEmpty ? _selectedOperatorIds.toList() : null,
-        items: _editableItems.isNotEmpty ? _editableItems : [],
+        items: _editableItems, // Всегда отправляем список, даже если он пустой
         totalAmount: totalAmount,
       );
       
@@ -929,7 +930,11 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Номенклатура добавлена, стоимость обновлена')),
+          SnackBar(
+            content: Text(_editableItems.isEmpty 
+              ? 'Номенклатура удалена, стоимость обновлена'
+              : 'Номенклатура обновлена, стоимость пересчитана'),
+          ),
         );
       }
     } catch (e) {

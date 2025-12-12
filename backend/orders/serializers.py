@@ -277,11 +277,13 @@ class OrderSerializer(serializers.ModelSerializer):
         return value
 
     def validate_items(self, value):
-        # Если items не переданы, None или пустой список, возвращаем None (необязательное поле)
+        # Если items не переданы или None, возвращаем None (необязательное поле)
         if value is None:
             return None
+        # ВАЖНО: Пустой список [] НЕ преобразуем в None!
+        # Пустой список означает "удалить все items", а None означает "не трогать items"
         if isinstance(value, list) and len(value) == 0:
-            return None  # Пустой список означает "нет items"
+            return []  # Возвращаем пустой список как есть, чтобы отличить от None
         # Валидируем только если есть элементы
         for item in value:
             if item["item_type"] == OrderItem.ItemType.EQUIPMENT and item.get("ref_id"):
