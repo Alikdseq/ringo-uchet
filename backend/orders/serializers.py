@@ -603,7 +603,7 @@ class OperatorSalarySerializer(serializers.Serializer):
 
 
 class OrderCompleteSerializer(serializers.Serializer):
-    """Сериализатор для завершения заявки с добавлением элементов номенклатуры."""
+    """Сериализатор для завершения заявки с добавлением элементов номенклатуры (опционально)."""
     comment = serializers.CharField(required=False, allow_blank=True, help_text="Комментарий к завершению заявки")
     end_dt = serializers.DateTimeField(required=True, help_text="Дата и время окончания работ")
     operator_salary = serializers.DecimalField(
@@ -612,20 +612,18 @@ class OrderCompleteSerializer(serializers.Serializer):
     operator_salaries = OperatorSalarySerializer(
         many=True, required=False, help_text="Список зарплат для каждого оператора"
     )
-    items = OrderItemSerializer(many=True, required=True, help_text="Список элементов номенклатуры (техника, инструменты, грунт). Для техники можно указать fuel_expense для каждой единицы.")
+    items = OrderItemSerializer(many=True, required=False, allow_empty=True, help_text="Список элементов номенклатуры (техника, инструменты, грунт). Опционально - если не указано, используется примерная стоимость заявки. Для техники можно указать fuel_expense для каждой единицы.")
     
     def validate(self, attrs):
         """Валидация всех данных."""
-        # Убеждаемся, что items валидированы правильно
-        items = attrs.get("items", [])
-        if not items:
-            raise serializers.ValidationError({"items": "Необходимо добавить хотя бы один элемент номенклатуры"})
+        # Items теперь необязательны - можно завершить заявку только с примерной стоимостью
         return attrs
     
     def validate_items(self, value):
         """Валидация элементов заказа."""
+        # Items необязательны - если не переданы или пустой список, используется примерная стоимость
         if not value:
-            raise serializers.ValidationError("Необходимо добавить хотя бы один элемент номенклатуры")
+            return []  # Возвращаем пустой список, если не передано
         for item in value:
             # item_type может быть строкой или enum, нормализуем к строке для сравнения
             item_type = item.get("item_type")

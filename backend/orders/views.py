@@ -328,26 +328,33 @@ class OrderViewSet(viewsets.ModelViewSet):
                 # Устанавливаем дату окончания
                 order.end_dt = serializer.validated_data["end_dt"]
                 
-                # Удаляем старые items, если есть
-                order.items.all().delete()
+                # Получаем items из формы завершения
+                # None означает "не передано" (сохранить текущие items и примерную стоимость)
+                # [] означает "пустой список" (удалить все items, использовать примерную стоимость)
+                # [items...] означает "переданы items" (удалить старые, добавить новые, считать по номенклатуре)
+                items_data = serializer.validated_data.get("items")
                 
-                # Добавляем новые items из формы завершения
-                items_data = serializer.validated_data["items"]
-                for item_data in items_data:
-                    try:
-                        # Нормализуем item_type для сравнения (может быть строкой или enum)
-                        item_type = item_data.get("item_type")
-                        if isinstance(item_type, OrderItem.ItemType):
-                            item_type_str = item_type.value
-                        elif hasattr(item_type, 'value'):
-                            item_type_str = item_type.value
-                        else:
-                            item_type_str = str(item_type).lower()
-                        
-                        # Для техники получаем данные из Equipment и используем введенные пользователем смены/часы
-                        if item_type_str == "equipment":
-                            try:
-                                equipment = Equipment.objects.get(id=item_data["ref_id"])
+                # Если items переданы (не None), обрабатываем их
+                if items_data is not None:
+                    # Удаляем старые items, если есть
+                    order.items.all().delete()
+                    
+                    # Добавляем новые items из формы завершения
+                    for item_data in items_data:
+                        try:
+                            # Нормализуем item_type для сравнения (может быть строкой или enum)
+                            item_type = item_data.get("item_type")
+                            if isinstance(item_type, OrderItem.ItemType):
+                                item_type_str = item_type.value
+                            elif hasattr(item_type, 'value'):
+                                item_type_str = item_type.value
+                            else:
+                                item_type_str = str(item_type).lower()
+                            
+                            # Для техники получаем данные из Equipment и используем введенные пользователем смены/часы
+                            if item_type_str == "equipment":
+                                try:
+                                    equipment = Equipment.objects.get(id=item_data["ref_id"])
                                 
                                 # Получаем смены и часы из metadata (введенные пользователем)
                                 metadata = item_data.get("metadata", {})
@@ -403,11 +410,11 @@ class OrderViewSet(viewsets.ModelViewSet):
                             except Exception as e:
                                 logger.error(f"Error creating equipment item: {e}", exc_info=True)
                                 raise
-                        # Для материалов (грунт, инструменты, навески) получаем данные из MaterialItem
-                        elif item_type_str == "material":
-                            try:
-                                from catalog.models import MaterialItem
-                                material = MaterialItem.objects.get(id=item_data["ref_id"])
+                            # Для материалов (грунт, инструменты, навески) получаем данные из MaterialItem
+                            elif item_type_str == "material":
+                                try:
+                                    from catalog.models import MaterialItem
+                                    material = MaterialItem.objects.get(id=item_data["ref_id"])
                                 
                                 # Сохраняем категорию материала в metadata для правильного отображения
                                 metadata = item_data.get("metadata", {})
@@ -434,35 +441,45 @@ class OrderViewSet(viewsets.ModelViewSet):
                             except Exception as e:
                                 logger.error(f"Error creating material item: {e}", exc_info=True)
                                 raise
-                        else:
-                            # Для других типов (если есть) просто создаем как есть
-                            item_type_enum = OrderItem.ItemType.EQUIPMENT  # По умолчанию
-                            if isinstance(item_data.get("item_type"), str):
-                                try:
-                                    item_type_enum = OrderItem.ItemType(item_data["item_type"])
-                                except (ValueError, KeyError):
-                                    logger.warning(f"Unknown item_type: {item_data.get('item_type')}, using EQUIPMENT")
-                            
-                            # Устанавливаем значения по умолчанию для обязательных полей
-                            OrderItem.objects.create(
-                                order=order,
-                                item_type=item_type_enum,
-                                ref_id=item_data.get("ref_id"),
-                                name_snapshot=item_data.get("name_snapshot", "Не указано"),
-                                quantity=Decimal(str(item_data.get("quantity", 1.0))),
-                                unit=item_data.get("unit", "pcs"),
-                                unit_price=Decimal(str(item_data.get("unit_price", 0.0))),
-                                tax_rate=Decimal(str(item_data.get("tax_rate", 0.0))),
-                                discount=Decimal(str(item_data.get("discount", 0.0))),
-                                metadata=item_data.get("metadata", {}),
-                            )
-                    except Exception as e:
-                        logger.error(f"Error processing item: {item_data}, error: {e}", exc_info=True)
-                        # Продолжаем обработку других items, но логируем ошибку
-                        continue
-                
-                # Пересчитываем общую стоимость
-                order.total_amount = calculate_order_total(order)
+                            else:
+                                # Для других типов (если есть) просто создаем как есть
+                                item_type_enum = OrderItem.ItemType.EQUIPMENT  # По умолчанию
+                                if isinstance(item_data.get("item_type"), str):
+                                    try:
+                                        item_type_enum = OrderItem.ItemType(item_data["item_type"])
+                                    except (ValueError, KeyError):
+                                        logger.warning(f"Unknown item_type: {item_data.get('item_type')}, using EQUIPMENT")
+                                
+                                # Устанавливаем значения по умолчанию для обязательных полей
+                                OrderItem.objects.create(
+                                    order=order,
+                                    item_type=item_type_enum,
+                                    ref_id=item_data.get("ref_id"),
+                                    name_snapshot=item_data.get("name_snapshot", "Не указано"),
+                                    quantity=Decimal(str(item_data.get("quantity", 1.0))),
+                                    unit=item_data.get("unit", "pcs"),
+                                    unit_price=Decimal(str(item_data.get("unit_price", 0.0))),
+                                    tax_rate=Decimal(str(item_data.get("tax_rate", 0.0))),
+                                    discount=Decimal(str(item_data.get("discount", 0.0))),
+                                    metadata=item_data.get("metadata", {}),
+                                )
+                        except Exception as e:
+                            logger.error(f"Error processing item: {item_data}, error: {e}", exc_info=True)
+                            # Продолжаем обработку других items, но логируем ошибку
+                            continue
+                    
+                    # Если items были добавлены, пересчитываем стоимость по номенклатуре
+                    if len(items_data) > 0:
+                        order.total_amount = calculate_order_total(order)
+                        logger.info(f"Completed order with nomenclature: total_amount = {order.total_amount}")
+                    else:
+                        # Пустой список items - удалили все items, используем примерную стоимость
+                        # Сохраняем текущую total_amount (примерную стоимость)
+                        logger.info(f"Completed order without nomenclature: removed all items, keeping estimated cost = {order.total_amount}")
+                else:
+                    # Если items не переданы (None), сохраняем текущее состояние заявки
+                    # Не удаляем существующие items (если они есть) и не меняем total_amount
+                    logger.info(f"Completed order without items field: keeping current state, total_amount = {order.total_amount}")
                 
                 # Обновляем статус
                 old_status = order.status

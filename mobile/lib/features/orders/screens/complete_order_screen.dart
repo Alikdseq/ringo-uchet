@@ -1087,12 +1087,8 @@ class _CompleteOrderScreenState extends ConsumerState<CompleteOrderScreen> {
       return;
     }
 
-    if (_selectedItems.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Добавьте хотя бы один элемент номенклатуры')),
-      );
-      return;
-    }
+    // Номенклатура теперь необязательна - можно завершить заявку только с примерной стоимостью
+    // Если items не добавлены, будет использована примерная стоимость заявки
 
     setState(() {
       _isSaving = true;
@@ -1130,7 +1126,8 @@ class _CompleteOrderScreenState extends ConsumerState<CompleteOrderScreen> {
                 : double.tryParse(_operatorSalaryController.text.trim())),
         // Новое поле с зарплатами для всех операторов
         'operator_salaries': operatorSalaries,
-        'items': _selectedItems.map((item) {
+        // Items необязательны - если список пустой, используется примерная стоимость заявки
+        'items': _selectedItems.isEmpty ? [] : _selectedItems.map((item) {
           final itemData = {
             'item_type': item.itemType.toString().split('.').last,
             'ref_id': item.refId,
