@@ -89,7 +89,7 @@ services:
     ports:
       - "8001:8000"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health/"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health/').read()"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -129,9 +129,12 @@ services:
       - AWS_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD:-minioadmin}
       - AWS_BUCKET=${AWS_BUCKET:-ringo-media}
       - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}
+      - DJANGO_ALLOWED_HOSTS=ringoouchet.ru,www.ringoouchet.ru,91.229.90.72
+      - CSRF_TRUSTED_ORIGINS=https://ringoouchet.ru,https://www.ringoouchet.ru,http://ringoouchet.ru,http://www.ringoouchet.ru,http://91.229.90.72
+      - CORS_ALLOW_ALL_ORIGINS=true
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-*}
       - CELERY_WORKER_CONCURRENCY=${CELERY_WORKER_CONCURRENCY:-4}
       - CELERY_WORKER_MAX_TASKS_PER_CHILD=${CELERY_WORKER_MAX_TASKS_PER_CHILD:-1000}
-      - CELERY_WORKER_AUTOSCALER=${CELERY_WORKER_AUTOSCALER:-true}
       - CELERY_WORKER_AUTOSCALER_MIN=${CELERY_WORKER_AUTOSCALER_MIN:-2}
       - CELERY_WORKER_AUTOSCALER_MAX=${CELERY_WORKER_AUTOSCALER_MAX:-10}
     command: >
@@ -175,6 +178,10 @@ services:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}
+      - DJANGO_ALLOWED_HOSTS=ringoouchet.ru,www.ringoouchet.ru,91.229.90.72
+      - CSRF_TRUSTED_ORIGINS=https://ringoouchet.ru,https://www.ringoouchet.ru,http://ringoouchet.ru,http://www.ringoouchet.ru,http://91.229.90.72
+      - CORS_ALLOW_ALL_ORIGINS=true
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-*}
     command: celery -A ringo_backend beat --loglevel=info
     healthcheck:
       test: ["CMD", "ps", "aux", "|", "grep", "celery.*beat"]

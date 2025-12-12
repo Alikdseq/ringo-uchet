@@ -332,7 +332,8 @@ CELERY_WORKER_MAX_TASKS_PER_CHILD = int(__import__("os").environ.get("CELERY_WOR
 CELERY_WORKER_PREFETCH_MULTIPLIER = int(__import__("os").environ.get("CELERY_WORKER_PREFETCH_MULTIPLIER", "4"))
 
 # Celery Autoscaling Configuration
-CELERY_WORKER_AUTOSCALER = __import__("os").environ.get("CELERY_WORKER_AUTOSCALER", "false").lower() == "true"
+# Autoscaler включен через флаг --autoscale в команде запуска worker
+# CELERY_WORKER_AUTOSCALER удалена, так как вызывала ошибку TypeError
 CELERY_WORKER_AUTOSCALER_MIN = int(__import__("os").environ.get("CELERY_WORKER_AUTOSCALER_MIN", "2"))
 CELERY_WORKER_AUTOSCALER_MAX = int(__import__("os").environ.get("CELERY_WORKER_AUTOSCALER_MAX", "10"))
 
