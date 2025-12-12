@@ -656,14 +656,19 @@ class OrderRequest {
     }
     
     // Явно конвертируем items в JSON (excludeId=true для создания новых элементов)
-    // ВАЖНО: отправляем items только если они явно указаны и не пустые
-    // Если items = null или пустой список при создании, не отправляем поле вообще
-    // Если items = [] при обновлении, отправляем пустой список - это означает "удалить все items"
-    if (items != null && items!.isNotEmpty) {
-      json['items'] = items!.map((item) => item.toJson(excludeId: true)).toList();
+    // ВАЖНО: 
+    // - Если items == null, не отправляем поле (не изменять существующие items при обновлении)
+    // - Если items == [], отправляем пустой список (удалить все items при обновлении)
+    // - Если items содержит элементы, отправляем их
+    if (items != null) {
+      if (items!.isNotEmpty) {
+        json['items'] = items!.map((item) => item.toJson(excludeId: true)).toList();
+      } else {
+        // Пустой список - явно отправляем для удаления всех items
+        json['items'] = [];
+      }
     }
-    // Если items == null или пустой список, не добавляем поле в JSON
-    // При создании это означает "нет items", при обновлении - "не изменять существующие items"
+    // Если items == null, поле не добавляется в JSON (не изменять существующие items)
     
     // Удаляем null значения для опциональных полей
     if (json['geo_lat'] == null) {

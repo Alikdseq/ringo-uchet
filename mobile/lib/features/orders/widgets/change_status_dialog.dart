@@ -133,7 +133,6 @@ class _ChangeStatusDialogState extends State<ChangeStatusDialog> {
         return 'Завершён';
       case OrderStatus.cancelled:
         return 'Отменён';
-      case OrderStatus.deleted:
         return 'Удалён';
     }
   }

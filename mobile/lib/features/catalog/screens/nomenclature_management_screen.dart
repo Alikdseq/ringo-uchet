@@ -256,7 +256,8 @@ class _NomenclatureManagementScreenState extends ConsumerState<NomenclatureManag
       return Text('${item.code} | ${item.hourlyRate.toStringAsFixed(2)} ₽/час');
     }
     if (item is ServiceItem) {
-      return Text('${item.price?.toStringAsFixed(2) ?? "Цена не указана"} ₽');
+      final priceText = item.price > 0 ? item.price.toStringAsFixed(2) : "Цена не указана";
+      return Text('$priceText ₽');
     }
     if (item is MaterialItem) {
       return Text('${item.price.toStringAsFixed(2)} ₽/${item.unit}');
@@ -321,7 +322,7 @@ class _NomenclatureEditScreenState extends ConsumerState<NomenclatureEditScreen>
     } else if (widget.item is ServiceItem) {
       final svc = widget.item as ServiceItem;
       _serviceNameController.text = svc.name;
-      _servicePriceController.text = svc.price?.toString() ?? '';
+      _servicePriceController.text = svc.price > 0 ? svc.price.toString() : '';
     } else if (widget.item is MaterialItem) {
       final mat = widget.item as MaterialItem;
       _materialNameController.text = mat.name;
@@ -377,10 +378,40 @@ class _NomenclatureEditScreenState extends ConsumerState<NomenclatureEditScreen>
           }
           break;
         case 'services':
-          // TODO: Реализовать создание/обновление услуг
+          if (widget.item != null && widget.item is ServiceItem) {
+            await catalogService.updateService(
+              (widget.item! as ServiceItem).id,
+              name: _serviceNameController.text.trim(),
+              price: double.tryParse(_servicePriceController.text),
+            );
+          } else {
+            await catalogService.createService(
+              name: _serviceNameController.text.trim(),
+              price: double.tryParse(_servicePriceController.text),
+            );
+          }
           break;
         case 'materials':
-          // TODO: Реализовать создание/обновление материалов
+          final price = double.parse(_materialPriceController.text.trim());
+          if (widget.item != null && widget.item is MaterialItem) {
+            final mat = widget.item as MaterialItem;
+            await catalogService.updateMaterial(
+              mat.id,
+              name: _materialNameController.text.trim(),
+              price: price,
+              unit: _materialUnitController.text.trim(),
+              category: mat.category,
+            );
+          } else {
+            // Определяем категорию по типу экрана
+            String category = 'soil'; // По умолчанию
+            await catalogService.createMaterial(
+              name: _materialNameController.text.trim(),
+              price: price,
+              unit: _materialUnitController.text.trim(),
+              category: category,
+            );
+          }
           break;
       }
 
