@@ -76,7 +76,7 @@ services:
       - AWS_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD:-minioadmin}
       - AWS_BUCKET=${AWS_BUCKET:-ringo-media}
       - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}
-      - DJANGO_ALLOWED_HOSTS=ringoouchet.ru,www.ringoouchet.ru,91.229.90.72
+      - DJANGO_ALLOWED_HOSTS=ringoouchet.ru,www.ringoouchet.ru,91.229.90.72,localhost,127.0.0.1
       - CSRF_TRUSTED_ORIGINS=https://ringoouchet.ru,https://www.ringoouchet.ru,http://ringoouchet.ru,http://www.ringoouchet.ru,http://91.229.90.72
       - CORS_ALLOW_ALL_ORIGINS=true
       - ALLOWED_HOSTS=${ALLOWED_HOSTS:-*}
@@ -89,7 +89,7 @@ services:
     ports:
       - "8001:8000"
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health/').read()"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health/').read()"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -129,7 +129,7 @@ services:
       - AWS_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD:-minioadmin}
       - AWS_BUCKET=${AWS_BUCKET:-ringo-media}
       - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}
-      - DJANGO_ALLOWED_HOSTS=ringoouchet.ru,www.ringoouchet.ru,91.229.90.72
+      - DJANGO_ALLOWED_HOSTS=ringoouchet.ru,www.ringoouchet.ru,91.229.90.72,localhost,127.0.0.1,localhost,127.0.0.1
       - CSRF_TRUSTED_ORIGINS=https://ringoouchet.ru,https://www.ringoouchet.ru,http://ringoouchet.ru,http://www.ringoouchet.ru,http://91.229.90.72
       - CORS_ALLOW_ALL_ORIGINS=true
       - ALLOWED_HOSTS=${ALLOWED_HOSTS:-*}
@@ -178,7 +178,7 @@ services:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}
-      - DJANGO_ALLOWED_HOSTS=ringoouchet.ru,www.ringoouchet.ru,91.229.90.72
+      - DJANGO_ALLOWED_HOSTS=ringoouchet.ru,www.ringoouchet.ru,91.229.90.72,localhost,127.0.0.1
       - CSRF_TRUSTED_ORIGINS=https://ringoouchet.ru,https://www.ringoouchet.ru,http://ringoouchet.ru,http://www.ringoouchet.ru,http://91.229.90.72
       - CORS_ALLOW_ALL_ORIGINS=true
       - ALLOWED_HOSTS=${ALLOWED_HOSTS:-*}
