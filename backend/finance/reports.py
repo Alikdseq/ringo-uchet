@@ -56,9 +56,10 @@ def filter_range(queryset, field: str, date_from: Optional[str], date_to: Option
 
 
 def summary_report(date_from: Optional[str], date_to: Optional[str]) -> dict:
-    # Для доходов учитываем все заказы, кроме отмененных
+    # Для доходов учитываем только завершенные заказы (COMPLETED)
     # Удаленные заявки больше не существуют в БД (hard delete)
-    orders = Order.objects.exclude(status=OrderStatus.CANCELLED)
+    # Не завершенные заявки не должны учитываться в отчетах
+    orders = Order.objects.filter(status=OrderStatus.COMPLETED)
     
     # Применяем фильтр по дате создания заказа
     # Если период указан, фильтруем по created_at
@@ -234,10 +235,11 @@ def summary_report(date_from: Optional[str], date_to: Optional[str]) -> dict:
 
 def equipment_report(date_from: Optional[str], date_to: Optional[str]) -> list[dict]:
     """Отчет по технике с правильным расчетом часов работы из start_dt и end_dt заказов."""
-    # Фильтруем только заявки, которые не отменены (удаленные заявки автоматически исключены через CASCADE)
+    # Фильтруем только завершенные заявки (COMPLETED)
+    # Удаленные заявки автоматически исключены через CASCADE
     items = filter_range(
         OrderItem.objects.filter(item_type=OrderItem.ItemType.EQUIPMENT)
-        .exclude(order__status=OrderStatus.CANCELLED)
+        .filter(order__status=OrderStatus.COMPLETED)
         .select_related("order"),
         "order__start_dt",
         date_from,
@@ -350,9 +352,10 @@ def equipment_report(date_from: Optional[str], date_to: Optional[str]) -> list[d
 
 def employees_report(date_from: Optional[str], date_to: Optional[str]) -> list[dict]:
     """Отчет по сотрудникам с фильтрацией зарплат по дате заказа."""
-    # Фильтруем заказы по периоду, если указан
+    # Фильтруем только завершенные заказы (COMPLETED)
     # Удаленные заявки больше не существуют в БД (hard delete)
-    orders = Order.objects.exclude(status=OrderStatus.CANCELLED)
+    # Не завершенные заявки не должны учитываться в отчетах
+    orders = Order.objects.filter(status=OrderStatus.COMPLETED)
     if date_from or date_to:
         orders = filter_range(orders, "created_at", date_from, date_to)
     

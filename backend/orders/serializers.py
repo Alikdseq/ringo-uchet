@@ -336,14 +336,10 @@ class OrderSerializer(serializers.ModelSerializer):
                 # Рассчитываем стоимость из items
                 items_total = calculate_order_total(order)
                 
-                # Если была указана примерная стоимость, прибавляем к ней стоимость items
-                if total_amount is not None:
-                    order.total_amount = Decimal(str(total_amount)) + items_total
-                    logger.info(f"Creating order with base total {total_amount} + items {items_total} = {order.total_amount}")
-                else:
-                    # Иначе используем только стоимость items
-                    order.total_amount = items_total
-                    logger.info(f"Creating order with items total: {items_total}")
+                # ВАЖНО: При добавлении номенклатуры примерная стоимость полностью убирается
+                # Считаем только по номенклатуре, независимо от того, была ли указана примерная стоимость
+                order.total_amount = items_total
+                logger.info(f"Creating order with nomenclature: ignoring estimated cost, using only items total: {items_total}")
             elif total_amount is not None:
                 # Если указана примерная стоимость без items, используем её
                 order.total_amount = Decimal(str(total_amount))
@@ -436,18 +432,10 @@ class OrderSerializer(serializers.ModelSerializer):
                     # Рассчитываем стоимость новых items
                     new_items_total = calculate_order_total(instance) or Decimal("0.00")
                     
-                    # Определяем примерную стоимость (базовая стоимость без items)
-                    # Если текущая total_amount больше суммы существующих items, значит есть примерная стоимость
-                    estimated_cost = current_total - existing_items_total
-                    
-                    if estimated_cost > Decimal("0.00"):
-                        # Была примерная стоимость - прибавляем стоимость новых items к примерной стоимости
-                        instance.total_amount = estimated_cost + new_items_total
-                        logger.info(f"Adding new items cost {new_items_total} to estimated cost {estimated_cost} = {instance.total_amount}")
-                    else:
-                        # Не было примерной стоимости - используем стоимость всех items
-                        instance.total_amount = new_items_total
-                        logger.info(f"Recalculating total from items: {new_items_total}")
+                    # ВАЖНО: При добавлении номенклатуры примерная стоимость полностью убирается
+                    # Считаем только по номенклатуре, независимо от того, была ли примерная стоимость
+                    instance.total_amount = new_items_total
+                    logger.info(f"Adding nomenclature: removing estimated cost, using only items cost: {new_items_total}")
                 elif items_data is not None and len(items_data) == 0:
                     # Если передан пустой список items - удаляем все items, но сохраняем примерную стоимость
                     existing_items_total = calculate_order_total(instance) or Decimal("0.00")
@@ -507,26 +495,61 @@ class OrderSerializer(serializers.ModelSerializer):
             raise
 
     def _upsert_items(self, order: Order, items_data: list[dict[str, Any]]) -> None:
-        """Создает позиции заказа, автоматически рассчитывая quantity для техники из времени работы."""
+        """Создает позиции заказа, правильно обрабатывая смены и часы для техники."""
         for item in items_data:
             item_data = item.copy()
-            # Для техники автоматически рассчитываем количество часов из start_dt и end_dt
+            # Для техники используем metadata с shifts и hours, если они указаны
             if item_data.get("item_type") == OrderItem.ItemType.EQUIPMENT:
-                if order.start_dt and order.end_dt:
-                    duration_hours = _get_duration_hours(order)
-                    # Округляем до 0.5 часа
-                    item_data["quantity"] = _round_half_hour(duration_hours)
-                    item_data["unit"] = "hour"
-                elif order.start_dt:
-                    # Если end_dt не указан, используем переданное quantity или 1
-                    item_data["quantity"] = item_data.get("quantity", Decimal("1.00"))
-                    item_data["unit"] = item_data.get("unit", "hour")
+                metadata = item_data.get("metadata", {})
+                if not isinstance(metadata, dict):
+                    metadata = {}
+                
+                shifts = Decimal(str(metadata.get("shifts", 0) or 0))
+                hours = Decimal(str(metadata.get("hours", 0) or 0))
+                
+                # Если указаны смены или часы в metadata, используем их
+                if shifts > 0 or hours > 0:
+                    # Получаем Equipment для получения daily_rate
+                    ref_id = item_data.get("ref_id")
+                    if ref_id:
+                        try:
+                            equipment = Equipment.objects.get(id=ref_id)
+                            # Сохраняем daily_rate в metadata если его там нет
+                            if "daily_rate" not in metadata and equipment.daily_rate:
+                                metadata["daily_rate"] = float(equipment.daily_rate)
+                            # Устанавливаем unit_price как hourly_rate
+                            item_data["unit_price"] = Decimal(str(equipment.hourly_rate or 0))
+                        except Equipment.DoesNotExist:
+                            logger.warning(f"Equipment with id {ref_id} not found")
+                    
+                    # Сохраняем shifts и hours в metadata
+                    metadata["shifts"] = float(shifts)
+                    metadata["hours"] = float(hours)
+                    item_data["metadata"] = metadata
+                    
+                    # quantity используется только для отображения, не для расчетов
+                    # Рассчитываем как сумму смен и часов для визуального представления
+                    quantity_for_display = shifts + hours
+                    item_data["quantity"] = Decimal(str(quantity_for_display))
+                    item_data["unit"] = "hour"  # Для совместимости
+                else:
+                    # Если нет metadata с shifts/hours, используем старую логику
+                    if order.start_dt and order.end_dt:
+                        duration_hours = _get_duration_hours(order)
+                        # Округляем до 0.5 часа
+                        item_data["quantity"] = _round_half_hour(duration_hours)
+                        item_data["unit"] = "hour"
+                    elif order.start_dt:
+                        # Если end_dt не указан, используем переданное quantity или 1
+                        item_data["quantity"] = item_data.get("quantity", Decimal("1.00"))
+                        item_data["unit"] = item_data.get("unit", "hour")
             # Для услуг с billing_mode="per_hour" также рассчитываем из времени
             elif item_data.get("item_type") == OrderItem.ItemType.SERVICE:
                 metadata = item_data.get("metadata", {})
                 if metadata.get("billing_mode") == "per_hour" and order.start_dt and order.end_dt:
                     duration_hours = _get_duration_hours(order)
                     item_data["quantity"] = _round_half_hour(duration_hours)
+            
             OrderItem.objects.create(order=order, **item_data)
 
     def _generate_order_number(self) -> str:

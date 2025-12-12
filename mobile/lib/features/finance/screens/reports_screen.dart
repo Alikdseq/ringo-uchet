@@ -547,7 +547,7 @@ class _EquipmentReportTabState extends ConsumerState<_EquipmentReportTab> {
           ..._equipment.map((item) => Card(
                 margin: const EdgeInsets.only(bottom: 8),
                 child: ExpansionTile(
-                  leading: const Icon(Icons.construction),
+                  leading: const Icon(Icons.local_shipping),
                   title: Text(item.equipmentName),
                   subtitle: Text('Код: ${item.code}'),
                   children: [

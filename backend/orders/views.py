@@ -640,8 +640,11 @@ class OrderViewSet(viewsets.ModelViewSet):
         
         # Удаляем расходы, привязанные к этой заявке, чтобы они не учитывались в отчетах
         # Расходы удаляются вместе с заявкой, так как они были созданы для этой заявки
-        from finance.models import Expense
+        from finance.models import Expense, SalaryRecord
         Expense.objects.filter(order=order).delete()
+        
+        # Удаляем зарплаты, привязанные к этой заявке, чтобы они не учитывались в отчетах
+        SalaryRecord.objects.filter(order=order).delete()
         
         # Полностью удаляем заявку из базы данных
         # CASCADE удалит все связанные записи (items, status_logs, photos и т.д.)
