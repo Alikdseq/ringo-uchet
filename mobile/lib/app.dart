@@ -13,7 +13,11 @@ import 'features/orders/screens/dashboard_screen.dart';
 import 'features/orders/screens/orders_list_screen.dart';
 import 'features/orders/screens/create_order_screen.dart';
 import 'features/orders/screens/order_detail_screen.dart';
+import 'features/orders/services/order_service.dart';
+import 'features/orders/models/order_models.dart';
 import 'features/catalog/screens/catalog_screen.dart';
+import 'features/catalog/services/catalog_service.dart';
+import 'features/catalog/models/catalog_models.dart';
 import 'features/finance/screens/reports_screen.dart';
 import 'features/finance/screens/operator_salary_screen.dart';
 import 'features/profile/screens/profile_screen.dart';
@@ -74,6 +78,8 @@ class _RingoAppState extends ConsumerState<RingoApp> {
               debugPrint('Sync service error (non-critical): $e');
             }
           }
+          // Запускаем предзагрузку данных в фоне для мгновенного доступа
+          _preloadData();
         }
       });
     } catch (e) {
@@ -119,6 +125,28 @@ class _RingoAppState extends ConsumerState<RingoApp> {
     }
   }
 
+  /// Предзагрузка данных в фоне для мгновенного доступа
+  void _preloadData() {
+    // Запускаем предзагрузку асинхронно, не блокируя UI
+    Future.microtask(() {
+      try {
+        final orderService = ref.read(orderServiceProvider);
+        final catalogService = ref.read(catalogServiceProvider);
+        
+        // Параллельная предзагрузка всех основных данных
+        Future.wait([
+          orderService.getOrders(useCache: true).catchError((e) => <Order>[]),
+          catalogService.getEquipment().catchError((e) => <Equipment>[]),
+          catalogService.getServices().catchError((e) => <ServiceItem>[]),
+          catalogService.getMaterials().catchError((e) => <MaterialItem>[]),
+        ], eagerError: false);
+      } catch (e) {
+        // Игнорируем ошибки предзагрузки
+        debugPrint('Preload data error (non-critical): $e');
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final authState = ref.watch(authStateProvider);
@@ -146,10 +174,11 @@ class _RingoAppState extends ConsumerState<RingoApp> {
         );
       },
       // Навигация на основе состояния аутентификации
-      home: authState.isLoading
-          ? const _SplashScreen()
-          : authState.isAuthenticated
-              ? const _HomeScreen()
+      // Оптимизация: показываем главный экран сразу если есть кэш пользователя, даже если еще загружается
+      home: authState.isAuthenticated
+          ? const _HomeScreen()
+          : authState.isLoading
+              ? const _SplashScreen()
               : const LoginScreen(),
       routes: {
         '/login': (context) => const LoginScreen(),
@@ -446,6 +475,8 @@ class _HomeScreenState extends ConsumerState<_HomeScreen> {
                     // Обновляем ключ для принудительного обновления OrdersListScreen
                     _ordersRefreshKey++;
                   });
+                  // Мгновенно обновляем список заявок
+                  // OrdersListScreen автоматически подхватит новую заявку из кэша
                 }
               },
               child: const Icon(Icons.add),

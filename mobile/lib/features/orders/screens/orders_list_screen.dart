@@ -48,7 +48,45 @@ class _OrdersListScreenState extends ConsumerState<OrdersListScreen> with Single
     super.didUpdateWidget(oldWidget);
     // Если изменился refreshKey, обновляем список
     if (widget.refreshKey != null && widget.refreshKey != oldWidget.refreshKey) {
-      _loadOrders(useCache: false); // Принудительно загружаем с сервера
+      // СНАЧАЛА загружаем из кэша для мгновенного отображения новой заявки
+      _loadOrdersFromCache();
+      // Затем в фоне обновляем с сервера
+      _loadOrders(useCache: false);
+    }
+  }
+
+  /// Мгновенная загрузка заявок из кэша (без индикатора загрузки)
+  Future<void> _loadOrdersFromCache() async {
+    try {
+      final cacheService = ref.read(cacheServiceProvider);
+      final cachedOrders = await cacheService.getCachedOrders();
+      if (cachedOrders != null && cachedOrders.isNotEmpty) {
+        final authState = ref.read(authStateProvider);
+        final user = authState.user;
+        
+        var orders = cachedOrders
+            .map((json) => Order.fromJson(json as Map<String, dynamic>))
+            .toList();
+        
+        // Если пользователь - оператор, фильтруем только его заявки
+        if (user?.role == 'operator' && user?.id != null) {
+          final operatorId = user!.id;
+          orders = orders.where((order) {
+            final byId = order.operatorId == operatorId;
+            final byObject = order.operator != null && order.operator!.id == operatorId;
+            return byId || byObject;
+          }).toList();
+        }
+        
+        // Мгновенно обновляем UI
+        if (mounted) {
+          setState(() {
+            _allOrders = orders;
+          });
+        }
+      }
+    } catch (e) {
+      // Игнорируем ошибки кэша, основной список загрузится с сервера
     }
   }
 

@@ -27,13 +27,19 @@ class _NomenclatureManagementScreenState extends ConsumerState<NomenclatureManag
     _loadItems();
   }
 
-  Future<void> _loadItems() async {
+  Future<void> _loadItems({bool useCache = true}) async {
     setState(() {
       _isLoading = true;
       _error = null;
     });
 
     try {
+      // СНАЧАЛА загружаем из кэша для мгновенного отображения
+      if (useCache) {
+        await _loadItemsFromCache();
+      }
+      
+      // Затем в ФОНЕ обновляем данные с сервера
       final catalogService = ref.read(catalogServiceProvider);
       List<dynamic> items = [];
 
@@ -54,10 +60,72 @@ class _NomenclatureManagementScreenState extends ConsumerState<NomenclatureManag
         _isLoading = false;
       });
     } catch (e) {
-      setState(() {
-        _error = e.toString();
-        _isLoading = false;
-      });
+      // Если ошибка, но есть данные в кэше, оставляем их
+      if (_items.isEmpty) {
+        setState(() {
+          _error = e.toString();
+          _isLoading = false;
+        });
+      } else {
+        // Есть данные в кэше, просто убираем индикатор загрузки
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  /// Мгновенная загрузка из кэша
+  Future<void> _loadItemsFromCache() async {
+    try {
+      final cacheService = ref.read(cacheServiceProvider);
+      List<dynamic>? cachedItems;
+
+      switch (widget.type) {
+        case 'equipment':
+          cachedItems = await cacheService.getCachedEquipment();
+          break;
+        case 'services':
+          cachedItems = await cacheService.getCachedServices();
+          break;
+        case 'materials':
+          cachedItems = await cacheService.getCachedMaterials();
+          break;
+      }
+
+      if (cachedItems != null && cachedItems.isNotEmpty) {
+        // Парсим элементы из кэша
+        final catalogService = ref.read(catalogServiceProvider);
+        List<dynamic> items = [];
+
+        switch (widget.type) {
+          case 'equipment':
+            items = cachedItems
+                .map((json) => Equipment.fromJson(json as Map<String, dynamic>))
+                .toList();
+            break;
+          case 'services':
+            items = cachedItems
+                .map((json) => ServiceItem.fromJson(json as Map<String, dynamic>))
+                .toList();
+            break;
+          case 'materials':
+            items = cachedItems
+                .map((json) => MaterialItem.fromJson(json as Map<String, dynamic>))
+                .toList();
+            break;
+        }
+
+        // Мгновенно обновляем UI
+        if (mounted) {
+          setState(() {
+            _items = items;
+            _isLoading = false; // UI готов, данные из кэша
+          });
+        }
+      }
+    } catch (e) {
+      // Если кэш недоступен, продолжаем загрузку с сервера
     }
   }
 
@@ -128,7 +196,14 @@ class _NomenclatureManagementScreenState extends ConsumerState<NomenclatureManag
           item: item,
         ),
       ),
-    ).then((_) => _loadItems());
+    ).then((result) {
+      // Мгновенно обновляем список из кэша, затем с сервера
+      if (result != null && result != false) {
+        _loadItems(useCache: true);
+      } else {
+        _loadItems(useCache: false);
+      }
+    });
   }
 
   void _addItem() {
@@ -139,7 +214,14 @@ class _NomenclatureManagementScreenState extends ConsumerState<NomenclatureManag
           type: widget.type,
         ),
       ),
-    ).then((_) => _loadItems());
+    ).then((result) {
+      // Мгновенно обновляем список из кэша, затем с сервера
+      if (result != null && result != false) {
+        _loadItems(useCache: true);
+      } else {
+        _loadItems(useCache: false);
+      }
+    });
   }
 
   String _getItemName(dynamic item) {
@@ -419,7 +501,7 @@ class _NomenclatureEditScreenState extends ConsumerState<NomenclatureEditScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(widget.item != null ? 'Обновлено' : 'Создано')),
         );
-        Navigator.pop(context);
+        Navigator.pop(context, true); // Возвращаем true для индикации успешного создания/обновления
       }
     } catch (e) {
       if (mounted) {

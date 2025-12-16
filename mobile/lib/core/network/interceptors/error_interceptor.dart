@@ -69,7 +69,7 @@ class ErrorInterceptor extends Interceptor {
         return AppException.server('Ошибка сервера');
       default:
         return AppException.unknown(
-          'Ошибка ${statusCode}: ${_extractMessage(data) ?? 'Неизвестная ошибка'}',
+          'Ошибка $statusCode: ${_extractMessage(data) ?? 'Неизвестная ошибка'}',
         );
     }
   }

@@ -1,8 +1,6 @@
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../constants/app_constants.dart';
-import '../network/dio_client.dart';
-import 'package:dio/dio.dart';
 
 /// Провайдер secure storage
 final secureStorageProvider = Provider<SecureStorage>((ref) {
@@ -61,6 +59,36 @@ class SecureStorage {
   /// Получить данные пользователя
   Future<String?> getUserData() async {
     return await _storage.read(key: AppConstants.storageUserKey);
+  }
+
+  /// Сохранить номер телефона для автоматического входа
+  Future<void> savePhone(String phone) async {
+    await _storage.write(key: AppConstants.storagePhoneKey, value: phone);
+  }
+
+  /// Получить сохраненный номер телефона
+  Future<String?> getPhone() async {
+    return await _storage.read(key: AppConstants.storagePhoneKey);
+  }
+
+  /// Сохранить email для автоматического входа
+  Future<void> saveEmail(String email) async {
+    await _storage.write(key: AppConstants.storageEmailKey, value: email);
+  }
+
+  /// Получить сохраненный email
+  Future<String?> getEmail() async {
+    return await _storage.read(key: AppConstants.storageEmailKey);
+  }
+
+  /// Сохранить пароль для автоматического входа (в зашифрованном виде)
+  Future<void> savePassword(String password) async {
+    await _storage.write(key: AppConstants.storagePasswordKey, value: password);
+  }
+
+  /// Получить сохраненный пароль
+  Future<String?> getPassword() async {
+    return await _storage.read(key: AppConstants.storagePasswordKey);
   }
 
   /// Очистить все данные

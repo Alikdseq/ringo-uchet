@@ -23,7 +23,7 @@ from users.models import User, UserRole
 
 # Создать суперпользователя
 admin, created = User.objects.get_or_create(
-    phone='79187020987',  # ЗАМЕНИТЕ НА ВАШ ТЕЛЕФОН!
+    phone='79888307777',  # ЗАМЕНИТЕ НА ВАШ ТЕЛЕФОН!
     defaults={
         'email': 'admin@ringoouchet.ru',
         'first_name': 'Администратор',
@@ -35,7 +35,7 @@ admin, created = User.objects.get_or_create(
     }
 )
 
-admin.set_password('alik123')  # ЗАМЕНИТЕ НА ВАШ ПАРОЛЬ!
+admin.set_password('ringoo123')  # ЗАМЕНИТЕ НА ВАШ ПАРОЛЬ!
 admin.is_staff = True
 admin.is_superuser = True
 admin.role = UserRole.ADMIN

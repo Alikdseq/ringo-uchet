@@ -34,7 +34,7 @@ sudo nano /etc/nginx/sites-available/ringo-uchet
 server {
     listen 80;
     listen [::]:80;
-    server_name ВАШ_IP;
+    server_name 91.229.90.72;
 
     # Логи
     access_log /var/log/nginx/ringo-uchet-access.log;

@@ -293,7 +293,23 @@ class CatalogService {
         if (dailyRate != null) 'daily_rate': dailyRate.toStringAsFixed(2),
         'status': 'available',
       });
-      return Equipment.fromJson(response.data as Map<String, dynamic>);
+      final equipment = Equipment.fromJson(response.data as Map<String, dynamic>);
+      
+      // Мгновенно обновляем кэш - добавляем новое оборудование в начало списка
+      final cacheService = _ref.read(cacheServiceProvider);
+      final cached = await cacheService.getCachedEquipment();
+      if (cached != null) {
+        // Удаляем элемент с таким же ID, если он есть (на случай дубликатов)
+        cached.removeWhere((e) => (e as Map)['id'] == equipment.id);
+        // Добавляем новое оборудование в начало списка
+        cached.insert(0, equipment.toJson());
+        await cacheService.cacheEquipment(cached);
+      } else {
+        // Если кэша нет, создаем новый с этим оборудованием
+        await cacheService.cacheEquipment([equipment.toJson()]);
+      }
+      
+      return equipment;
     } on DioException catch (e) {
       throw _handleError(e);
     } catch (e) {
@@ -354,7 +370,23 @@ class CatalogService {
         if (categoryId != null) 'category_id': categoryId,
         'is_active': true,
       });
-      return ServiceItem.fromJson(response.data as Map<String, dynamic>);
+      final service = ServiceItem.fromJson(response.data as Map<String, dynamic>);
+      
+      // Мгновенно обновляем кэш - добавляем новую услугу в начало списка
+      final cacheService = _ref.read(cacheServiceProvider);
+      final cached = await cacheService.getCachedServices();
+      if (cached != null) {
+        // Удаляем элемент с таким же ID, если он есть (на случай дубликатов)
+        cached.removeWhere((s) => (s as Map)['id'] == service.id);
+        // Добавляем новую услугу в начало списка
+        cached.insert(0, service.toJson());
+        await cacheService.cacheServices(cached);
+      } else {
+        // Если кэша нет, создаем новый с этой услугой
+        await cacheService.cacheServices([service.toJson()]);
+      }
+      
+      return service;
     } on DioException catch (e) {
       throw _handleError(e);
     } catch (e) {
@@ -413,7 +445,23 @@ class CatalogService {
         if (category != null) 'category': category,
         'is_active': true,
       });
-      return MaterialItem.fromJson(response.data as Map<String, dynamic>);
+      final material = MaterialItem.fromJson(response.data as Map<String, dynamic>);
+      
+      // Мгновенно обновляем кэш - добавляем новый материал в начало списка
+      final cacheService = _ref.read(cacheServiceProvider);
+      final cached = await cacheService.getCachedMaterials();
+      if (cached != null) {
+        // Удаляем элемент с таким же ID, если он есть (на случай дубликатов)
+        cached.removeWhere((m) => (m as Map)['id'] == material.id);
+        // Добавляем новый материал в начало списка
+        cached.insert(0, material.toJson());
+        await cacheService.cacheMaterials(cached);
+      } else {
+        // Если кэша нет, создаем новый с этим материалом
+        await cacheService.cacheMaterials([material.toJson()]);
+      }
+      
+      return material;
     } on DioException catch (e) {
       throw _handleError(e);
     } catch (e) {

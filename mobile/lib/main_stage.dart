@@ -4,11 +4,8 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'core/config/app_config.dart';
 import 'core/config/firebase_config.dart';
-import 'core/config/firebase_service.dart';
 import 'core/network/dio_client.dart';
 import 'core/storage/local_storage.dart';
-import 'core/theme/app_theme.dart';
-import 'core/theme/app_localizations.dart';
 import 'app.dart';
 
 void main() async {

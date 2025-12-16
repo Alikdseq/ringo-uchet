@@ -48,7 +48,7 @@ echo "=== Тест логин через curl ==="
 curl -k -X POST https://ringoouchet.ru/api/v1/token/ \
   -H "Content-Type: application/json" \
   -H "Origin: https://ringoouchet.ru" \
-  -d '{"phone":"ВАШ_ТЕЛЕФОН","password":"ВАШ_ПАРОЛЬ"}' \
+  -d '{"phone":"79991234567","password":"admin123"}' \
   -v 2>&1 | tee /tmp/login_curl.log
 
 echo -e "\n=== Результат ==="

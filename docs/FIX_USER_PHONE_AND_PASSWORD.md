@@ -32,9 +32,9 @@ user = User.objects.filter(email='alikhan2102@mail.eu').first()
 
 if user:
     # Установить телефон
-    user.phone = '79991234567'  # ЗАМЕНИТЕ НА ВАШ РЕАЛЬНЫЙ ТЕЛЕФОН!
+    user.phone = '79187020987'  # ЗАМЕНИТЕ НА ВАШ РЕАЛЬНЫЙ ТЕЛЕФОН!
     # Установить пароль
-    user.set_password('admin123')  # ЗАМЕНИТЕ НА ВАШ ПАРОЛЬ!
+    user.set_password('alik123')  # ЗАМЕНИТЕ НА ВАШ ПАРОЛЬ!
     user.save()
     print(f"✅ Обновлен пользователь:")
     print(f"   Телефон: {user.phone}")

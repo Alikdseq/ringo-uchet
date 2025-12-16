@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../lib/features/orders/screens/orders_list_screen.dart';
-import '../../../lib/core/config/app_config.dart';
-import '../../../lib/core/network/dio_client.dart';
-import '../../../lib/features/orders/services/order_service.dart';
+import 'package:ringo_mobile/features/orders/screens/orders_list_screen.dart';
+import 'package:ringo_mobile/core/config/app_config.dart';
+import 'package:ringo_mobile/core/network/dio_client.dart';
+import 'package:ringo_mobile/features/orders/services/order_service.dart';
 import '../../helpers/test_helpers.dart';
 
 void main() {
@@ -24,8 +24,8 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           parent: container,
-          child: MaterialApp(
-            home: const OrdersListScreen(),
+          child: const MaterialApp(
+            home: OrdersListScreen(),
           ),
         ),
       );
@@ -42,8 +42,8 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           parent: container,
-          child: MaterialApp(
-            home: const OrdersListScreen(),
+          child: const MaterialApp(
+            home: OrdersListScreen(),
           ),
         ),
       );

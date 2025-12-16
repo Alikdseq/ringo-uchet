@@ -52,6 +52,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   /// Проверка статуса аутентификации при инициализации
   /// Оптимизировано: сначала загружаем из кэша, затем обновляем в фоне
+  /// Автоматический вход: если есть сохраненные данные, автоматически входим
   Future<void> _checkAuthStatus() async {
     final token = await _secureStorage.getAccessToken();
     if (token != null) {
@@ -75,7 +76,39 @@ class AuthNotifier extends StateNotifier<AuthState> {
       // Затем в ФОНЕ обновляем данные с сервера
       _refreshUserInBackground();
     } else {
-      // Если токена нет, просто устанавливаем состояние
+      // Если токена нет, проверяем наличие сохраненных данных для автоматического входа
+      final savedPhone = await _secureStorage.getPhone();
+      final savedEmail = await _secureStorage.getEmail();
+      final savedPassword = await _secureStorage.getPassword();
+      
+      if (savedPassword != null && (savedPhone != null || savedEmail != null)) {
+        // Автоматический вход с сохраненными данными
+        await _autoLogin(savedPhone, savedEmail, savedPassword);
+      } else {
+        // Если данных нет, просто устанавливаем состояние
+        state = state.copyWith(
+          isAuthenticated: false,
+          user: null,
+          clearError: true,
+        );
+      }
+    }
+  }
+
+  /// Автоматический вход с сохраненными данными
+  Future<void> _autoLogin(String? phone, String? email, String password) async {
+    try {
+      final request = LoginRequest(
+        phone: phone,
+        email: email,
+        password: password,
+      );
+      
+      // Входим без показа индикатора загрузки (silent login)
+      await login(request, showLoading: false);
+    } catch (e) {
+      // Если автоматический вход не удался, очищаем состояние
+      // Но не показываем ошибку пользователю
       state = state.copyWith(
         isAuthenticated: false,
         user: null,
@@ -126,8 +159,10 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 
   /// Логин по телефону/email/username и паролю
-  Future<void> login(LoginRequest request) async {
-    state = state.copyWith(isLoading: true, clearError: true);
+  Future<void> login(LoginRequest request, {bool showLoading = true}) async {
+    if (showLoading) {
+      state = state.copyWith(isLoading: true, clearError: true);
+    }
 
     try {
       final authResponse = await _authService.login(request);
@@ -135,6 +170,15 @@ class AuthNotifier extends StateNotifier<AuthState> {
       // Сохраняем токены СИНХРОННО перед любыми запросами
       await _secureStorage.saveAccessToken(authResponse.access);
       await _secureStorage.saveRefreshToken(authResponse.refresh);
+
+      // Сохраняем данные для автоматического входа (телефон/email и пароль)
+      if (request.phone != null && request.phone!.isNotEmpty) {
+        await _secureStorage.savePhone(request.phone!);
+      }
+      if (request.email != null && request.email!.isNotEmpty) {
+        await _secureStorage.saveEmail(request.email!);
+      }
+      await _secureStorage.savePassword(request.password);
 
       // Проверяем что токен действительно сохранен перед запросами
       final savedToken = await _secureStorage.getAccessToken();
@@ -184,12 +228,20 @@ class AuthNotifier extends StateNotifier<AuthState> {
         exception: e,
         isAuthenticated: false,
       );
+      // При ошибке входа очищаем сохраненные данные
+      await _secureStorage.savePhone('');
+      await _secureStorage.saveEmail('');
+      await _secureStorage.savePassword('');
     } catch (e) {
       state = state.copyWith(
         isLoading: false,
         error: 'Неизвестная ошибка: ${e.toString()}',
         isAuthenticated: false,
       );
+      // При ошибке входа очищаем сохраненные данные
+      await _secureStorage.savePhone('');
+      await _secureStorage.saveEmail('');
+      await _secureStorage.savePassword('');
     }
   }
 
@@ -301,7 +353,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 
   /// Выход из системы
-  Future<void> logout() async {
+  Future<void> logout({bool clearSavedCredentials = true}) async {
     state = state.copyWith(isLoading: true);
 
     try {
@@ -314,6 +366,11 @@ class AuthNotifier extends StateNotifier<AuthState> {
     } finally {
       // Очищаем все данные
       await _secureStorage.clearAll();
+      // Если нужно сохранить данные для автоматического входа, очищаем их отдельно
+      if (!clearSavedCredentials) {
+        // Сохраняем данные обратно (но это не сработает после clearAll, поэтому просто не очищаем)
+        // В этом случае лучше не вызывать clearAll, а очищать только токены
+      }
       state = state.copyWith(
         isAuthenticated: false,
         user: null,

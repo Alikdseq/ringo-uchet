@@ -31,7 +31,7 @@ sudo nano /etc/nginx/sites-available/ringo-uchet
         root /var/www/certbot;
     }
 
-    # Статические файлы Flutter Web приложения
+    # Статические файлы Flutter Web приложения 
     location / {
 ```
 

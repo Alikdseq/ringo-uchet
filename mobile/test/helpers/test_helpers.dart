@@ -3,16 +3,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:dio/dio.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart' as sqflite_ffi;
-import '../../lib/core/network/dio_client.dart';
-import '../../lib/core/storage/secure_storage.dart';
-import '../../lib/core/storage/local_storage.dart';
-import '../../lib/core/config/app_config.dart';
-import '../../lib/features/auth/services/auth_service.dart';
-import '../../lib/features/orders/services/order_service.dart';
-import '../../lib/features/catalog/services/catalog_service.dart';
-import '../../lib/core/offline/cache_service.dart';
-import '../../lib/core/offline/offline_queue_service.dart';
-import '../../lib/core/network/connectivity_service.dart';
+import 'package:ringo_mobile/core/network/dio_client.dart';
+import 'package:ringo_mobile/core/storage/secure_storage.dart';
+import 'package:ringo_mobile/core/storage/local_storage.dart';
+import 'package:ringo_mobile/core/config/app_config.dart';
+import 'package:ringo_mobile/features/auth/services/auth_service.dart';
+import 'package:ringo_mobile/features/orders/services/order_service.dart';
+import 'package:ringo_mobile/features/catalog/services/catalog_service.dart';
+import 'package:ringo_mobile/core/offline/cache_service.dart';
+import 'package:ringo_mobile/core/offline/offline_queue_service.dart';
+import 'package:ringo_mobile/core/network/connectivity_service.dart';
 
 /// Инициализация для тестов
 void initTestDatabase() {

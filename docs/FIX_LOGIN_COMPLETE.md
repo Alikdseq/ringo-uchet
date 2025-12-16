@@ -94,7 +94,7 @@ PYTHON
 curl -k -X POST https://ringoouchet.ru/api/v1/token/ \
   -H "Content-Type: application/json" \
   -H "Origin: https://ringoouchet.ru" \
-  -d '{"phone":"79991234567","password":"admin123"}' \
+  -d '{"phone":"89187020987","password":"alik123"}' \
   -v 2>&1 | grep -E "< HTTP|token|error|detail|access"
 ```
 

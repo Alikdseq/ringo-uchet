@@ -9,6 +9,9 @@ class AppConstants {
   static const String storageTokenKey = 'auth_token';
   static const String storageRefreshTokenKey = 'refresh_token';
   static const String storageUserKey = 'user_data';
+  static const String storagePhoneKey = 'saved_phone';
+  static const String storageEmailKey = 'saved_email';
+  static const String storagePasswordKey = 'saved_password';
   static const String storageLocaleKey = 'locale';
   static const String storageThemeKey = 'theme_mode';
 
