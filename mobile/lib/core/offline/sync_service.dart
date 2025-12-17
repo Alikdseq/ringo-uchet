@@ -1,9 +1,14 @@
 import 'dart:io';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../network/dio_client.dart';
 import '../network/connectivity_service.dart';
 import 'offline_queue_service.dart';
+import '../../features/orders/services/order_service.dart';
+import '../../features/orders/models/order_models.dart';
+import '../../features/catalog/services/catalog_service.dart';
+import '../../features/catalog/models/catalog_models.dart';
 
 /// Провайдер сервиса синхронизации
 final syncServiceProvider = Provider<SyncService>((ref) {
@@ -106,13 +111,63 @@ class SyncService {
   }
 
   /// Автоматическая синхронизация при появлении сети
+  /// УЛУЧШЕНО: Более надежная работа, автоматическое обновление данных
   void startAutoSync() {
     final connectivityService = _ref.read(connectivityServiceProvider);
-    connectivityService.statusStream.listen((status) {
+    connectivityService.statusStream.listen((status) async {
       if (status == ConnectionStatus.connected) {
-        syncQueue();
+        debugPrint('🌐 Internet connected - starting sync...');
+        
+        // Сначала синхронизируем очередь оффлайн действий
+        try {
+          await syncQueue();
+          debugPrint('✅ Offline queue synced');
+        } catch (e) {
+          debugPrint('⚠️ Queue sync error: $e');
+        }
+        
+        // Затем обновляем данные с сервера в фоне
+        try {
+          await _refreshDataFromServer();
+          debugPrint('✅ Data refreshed from server');
+        } catch (e) {
+          debugPrint('⚠️ Data refresh error: $e');
+        }
+      } else {
+        debugPrint('📴 Internet disconnected - working offline');
       }
     });
+  }
+  
+  /// Обновление данных с сервера при появлении интернета
+  Future<void> _refreshDataFromServer() async {
+    try {
+      // Импортируем сервисы для обновления данных
+      final orderService = _ref.read(orderServiceProvider);
+      final catalogService = _ref.read(catalogServiceProvider);
+      
+      // Обновляем данные параллельно
+      await Future.wait([
+        orderService.getOrders(useCache: true).catchError((e) {
+          debugPrint('Refresh orders error: $e');
+          return <Order>[];
+        }),
+        catalogService.getEquipment().catchError((e) {
+          debugPrint('Refresh equipment error: $e');
+          return <Equipment>[];
+        }),
+        catalogService.getServices().catchError((e) {
+          debugPrint('Refresh services error: $e');
+          return <ServiceItem>[];
+        }),
+        catalogService.getMaterials().catchError((e) {
+          debugPrint('Refresh materials error: $e');
+          return <MaterialItem>[];
+        }),
+      ], eagerError: false);
+    } catch (e) {
+      debugPrint('Data refresh error: $e');
+    }
   }
 }
 

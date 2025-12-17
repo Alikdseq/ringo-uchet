@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:hive_flutter/hive_flutter.dart';
-import 'package:sqflite/sqflite.dart';
+// Условный импорт sqflite - исключается из веб-сборки  
+import 'package:sqflite/sqflite.dart' if (dart.library.html) 'sqflite_stub.dart';
+// ignore: depend_on_referenced_packages
 import 'package:path/path.dart' as path;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../constants/app_constants.dart';
@@ -10,8 +12,14 @@ final localStorageProvider = Provider<LocalStorage>((ref) {
   return LocalStorage();
 });
 
-/// Провайдер SQLite database
-final sqliteProvider = FutureProvider<Database>((ref) async {
+/// Провайдер SQLite database (только для мобильных платформ, не для веб)
+final sqliteProvider = FutureProvider<Database?>((ref) async {
+  // SQLite не поддерживается на веб, возвращаем null
+  if (kIsWeb) {
+    return null;
+  }
+  
+  // Для мобильных платформ используем sqflite
   final dbPath = await getDatabasesPath();
   final db = await openDatabase(
     path.join(dbPath, 'ringo.db'),

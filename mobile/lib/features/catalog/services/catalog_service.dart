@@ -20,9 +20,11 @@ class CatalogService {
   CatalogService(this._dio, this._ref);
 
   /// Получить список техники
+  /// ОПТИМИЗАЦИЯ: Поддержка пагинации для быстрой загрузки
   Future<List<Equipment>> getEquipment({
     String? status,
     String? search,
+    int? pageSize,
   }) async {
     try {
       final queryParams = <String, dynamic>{};
@@ -31,6 +33,12 @@ class CatalogService {
       }
       if (search != null && search.isNotEmpty) {
         queryParams['search'] = search;
+      }
+      // Оптимизация: используем пагинацию для быстрой загрузки
+      if (pageSize != null) {
+        queryParams['page_size'] = pageSize;
+      } else {
+        queryParams['page_size'] = 100; // Загружаем больше данных за раз
       }
 
       final response = await _dio.get('/equipment/', queryParameters: queryParams);
@@ -54,14 +62,24 @@ class CatalogService {
 
       return equipmentList;
     } on DioException catch (e) {
-      // Если нет сети, пытаемся получить из кэша
-      if (e.type == DioExceptionType.connectionError || e.error is SocketException) {
-        final cacheService = _ref.read(cacheServiceProvider);
-        final cached = await cacheService.getCachedEquipment();
-        if (cached != null) {
-          return cached
-              .map((json) => Equipment.fromJson(json as Map<String, dynamic>))
-              .toList();
+      // ОПТИМИЗАЦИЯ ДЛЯ VPN: При любой сетевой ошибке или таймауте используем кэш
+      if (e.type == DioExceptionType.connectionError ||
+          e.type == DioExceptionType.connectionTimeout ||
+          e.type == DioExceptionType.receiveTimeout ||
+          e.type == DioExceptionType.sendTimeout ||
+          e.type == DioExceptionType.badResponse ||
+          e.error is SocketException) {
+        try {
+          final cacheService = _ref.read(cacheServiceProvider);
+          final cached = await cacheService.getCachedEquipment();
+          if (cached != null && cached.isNotEmpty) {
+            // Возвращаем кэшированные данные вместо ошибки
+            return cached
+                .map((json) => Equipment.fromJson(json as Map<String, dynamic>))
+                .toList();
+          }
+        } catch (cacheError) {
+          // Если кэш недоступен, продолжаем с ошибкой
         }
       }
       throw _handleError(e);
@@ -72,9 +90,11 @@ class CatalogService {
   }
 
   /// Получить список услуг
+  /// ОПТИМИЗАЦИЯ: Поддержка пагинации для быстрой загрузки
   Future<List<ServiceItem>> getServices({
     int? category,
     String? search,
+    int? pageSize,
   }) async {
     try {
       final queryParams = <String, dynamic>{};
@@ -83,6 +103,12 @@ class CatalogService {
       }
       if (search != null && search.isNotEmpty) {
         queryParams['search'] = search;
+      }
+      // Оптимизация: используем пагинацию для быстрой загрузки
+      if (pageSize != null) {
+        queryParams['page_size'] = pageSize;
+      } else {
+        queryParams['page_size'] = 100; // Загружаем больше данных за раз
       }
 
       final response = await _dio.get('/services/', queryParameters: queryParams);
@@ -106,14 +132,24 @@ class CatalogService {
 
       return servicesList;
     } on DioException catch (e) {
-      // Если нет сети, пытаемся получить из кэша
-      if (e.type == DioExceptionType.connectionError || e.error is SocketException) {
-        final cacheService = _ref.read(cacheServiceProvider);
-        final cached = await cacheService.getCachedServices();
-        if (cached != null) {
-          return cached
-              .map((json) => ServiceItem.fromJson(json as Map<String, dynamic>))
-              .toList();
+      // ОПТИМИЗАЦИЯ ДЛЯ VPN: При любой сетевой ошибке или таймауте используем кэш
+      if (e.type == DioExceptionType.connectionError ||
+          e.type == DioExceptionType.connectionTimeout ||
+          e.type == DioExceptionType.receiveTimeout ||
+          e.type == DioExceptionType.sendTimeout ||
+          e.type == DioExceptionType.badResponse ||
+          e.error is SocketException) {
+        try {
+          final cacheService = _ref.read(cacheServiceProvider);
+          final cached = await cacheService.getCachedServices();
+          if (cached != null && cached.isNotEmpty) {
+            // Возвращаем кэшированные данные вместо ошибки
+            return cached
+                .map((json) => ServiceItem.fromJson(json as Map<String, dynamic>))
+                .toList();
+          }
+        } catch (cacheError) {
+          // Если кэш недоступен, продолжаем с ошибкой
         }
       }
       throw _handleError(e);
@@ -124,9 +160,11 @@ class CatalogService {
   }
 
   /// Получить список материалов
+  /// ОПТИМИЗАЦИЯ: Поддержка пагинации для быстрой загрузки
   Future<List<MaterialItem>> getMaterials({
     String? search,
     String? category,
+    int? pageSize,
   }) async {
     try {
       final queryParams = <String, dynamic>{};
@@ -135,6 +173,12 @@ class CatalogService {
       }
       if (category != null) {
         queryParams['category'] = category;
+      }
+      // Оптимизация: используем пагинацию для быстрой загрузки
+      if (pageSize != null) {
+        queryParams['page_size'] = pageSize;
+      } else {
+        queryParams['page_size'] = 100; // Загружаем больше данных за раз
       }
 
       final response = await _dio.get('/materials/', queryParameters: queryParams);
@@ -158,14 +202,24 @@ class CatalogService {
 
       return materialsList;
     } on DioException catch (e) {
-      // Если нет сети, пытаемся получить из кэша
-      if (e.type == DioExceptionType.connectionError || e.error is SocketException) {
-        final cacheService = _ref.read(cacheServiceProvider);
-        final cached = await cacheService.getCachedMaterials();
-        if (cached != null) {
-          return cached
-              .map((json) => MaterialItem.fromJson(json as Map<String, dynamic>))
-              .toList();
+      // ОПТИМИЗАЦИЯ ДЛЯ VPN: При любой сетевой ошибке или таймауте используем кэш
+      if (e.type == DioExceptionType.connectionError ||
+          e.type == DioExceptionType.connectionTimeout ||
+          e.type == DioExceptionType.receiveTimeout ||
+          e.type == DioExceptionType.sendTimeout ||
+          e.type == DioExceptionType.badResponse ||
+          e.error is SocketException) {
+        try {
+          final cacheService = _ref.read(cacheServiceProvider);
+          final cached = await cacheService.getCachedMaterials();
+          if (cached != null && cached.isNotEmpty) {
+            // Возвращаем кэшированные данные вместо ошибки
+            return cached
+                .map((json) => MaterialItem.fromJson(json as Map<String, dynamic>))
+                .toList();
+          }
+        } catch (cacheError) {
+          // Если кэш недоступен, продолжаем с ошибкой
         }
       }
       throw _handleError(e);

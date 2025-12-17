@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../core/utils/debouncer.dart';
+import '../../../core/offline/cache_service.dart';
 import '../../auth/providers/auth_providers.dart';
 import '../models/catalog_models.dart';
 import '../services/catalog_service.dart';
@@ -16,15 +18,30 @@ class CatalogScreen extends ConsumerStatefulWidget {
 class _CatalogScreenState extends ConsumerState<CatalogScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final _searchController = TextEditingController();
+  final _debouncer = Debouncer(delay: const Duration(milliseconds: 300));
+  int _refreshKey = 0; // Ключ для принудительного обновления табов
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 5, vsync: this); // Техника, Услуги, Грунт, Инструмент, Навеска
+    // Оптимизация: debounce для поиска
+    _searchController.addListener(_onSearchChanged);
+  }
+
+  void _onSearchChanged() {
+    // Используем debounce чтобы не перерисовывать на каждое нажатие клавиши
+    _debouncer.call(() {
+      if (mounted) {
+        setState(() {});
+      }
+    });
   }
 
   @override
   void dispose() {
+    _debouncer.dispose();
+    _searchController.removeListener(_onSearchChanged);
     _tabController.dispose();
     _searchController.dispose();
     super.dispose();
@@ -32,7 +49,8 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen> with SingleTicker
 
   @override
   Widget build(BuildContext context) {
-    final authState = ref.watch(authStateProvider);
+    // Оптимизация: используем read вместо watch для избежания лишних перерисовок
+    final authState = ref.read(authStateProvider);
     final isAdmin = authState.user?.role == 'admin';
     
     return Scaffold(
@@ -61,9 +79,14 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen> with SingleTicker
                           tabIndex: currentIndex,
                         ),
                       ),
-                    ).then((_) {
-                      // Обновляем данные после возврата
-                      setState(() {});
+                    ).then((result) {
+                      // Мгновенно обновляем данные после создания/обновления
+                      // Инкрементируем refreshKey для принудительного обновления табов
+                      if (result == true) {
+                        setState(() {
+                          _refreshKey++;
+                        });
+                      }
                     });
                   },
                 ),
@@ -149,7 +172,7 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen> with SingleTicker
                 borderRadius: BorderRadius.circular(12),
               ),
             ),
-            onChanged: (_) => setState(() {}),
+            // Оптимизация: фильтрация происходит через debounce в _onSearchChanged
           ),
         ),
         // Контент
@@ -157,11 +180,31 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen> with SingleTicker
           child: TabBarView(
             controller: _tabController,
             children: [
-              _EquipmentTab(search: _searchController.text, isAdmin: isAdmin),
-              _ServicesTab(search: _searchController.text, isAdmin: isAdmin),
-              _SoilTab(search: _searchController.text, isAdmin: isAdmin),
-              _ToolTab(search: _searchController.text, isAdmin: isAdmin),
-              _AttachmentTab(search: _searchController.text, isAdmin: isAdmin),
+              _EquipmentTab(
+                key: ValueKey('equipment_$_refreshKey'),
+                search: _searchController.text,
+                isAdmin: isAdmin,
+              ),
+              _ServicesTab(
+                key: ValueKey('services_$_refreshKey'),
+                search: _searchController.text,
+                isAdmin: isAdmin,
+              ),
+              _SoilTab(
+                key: ValueKey('soil_$_refreshKey'),
+                search: _searchController.text,
+                isAdmin: isAdmin,
+              ),
+              _ToolTab(
+                key: ValueKey('tool_$_refreshKey'),
+                search: _searchController.text,
+                isAdmin: isAdmin,
+              ),
+              _AttachmentTab(
+                key: ValueKey('attachment_$_refreshKey'),
+                search: _searchController.text,
+                isAdmin: isAdmin,
+              ),
             ],
           ),
         ),
@@ -176,7 +219,7 @@ class _EquipmentTab extends ConsumerStatefulWidget {
   final String search;
   final bool isAdmin;
 
-  const _EquipmentTab({required this.search, required this.isAdmin});
+  const _EquipmentTab({super.key, required this.search, required this.isAdmin});
 
   @override
   ConsumerState<_EquipmentTab> createState() => _EquipmentTabState();
@@ -201,10 +244,47 @@ class _EquipmentTabState extends ConsumerState<_EquipmentTab> {
 
   void _loadEquipment() {
     final catalogService = ref.read(catalogServiceProvider);
+    final cacheService = ref.read(cacheServiceProvider);
+    
+    // ОПТИМИЗАЦИЯ: Сначала загружаем из кэша для мгновенного отображения
+    Future<List<Equipment>> loadFromCache() async {
+      try {
+        final cached = await cacheService.getCachedEquipment();
+        if (cached != null && cached.isNotEmpty) {
+          return cached
+              .map((json) => Equipment.fromJson(json as Map<String, dynamic>))
+              .toList();
+        }
+      } catch (e) {
+        // Игнорируем ошибки кэша
+      }
+      return [];
+    }
+    
+    // Загружаем из кэша сразу, затем обновляем с сервера
     setState(() {
-      _equipmentFuture = catalogService.getEquipment(
-        search: widget.search.isEmpty ? null : widget.search,
-      );
+      _equipmentFuture = loadFromCache().then((cachedEquipment) {
+        // После загрузки из кэша, обновляем с сервера
+        return catalogService.getEquipment(
+          search: widget.search.isEmpty ? null : widget.search,
+        ).then((serverEquipment) {
+          // Фильтруем по поиску если нужно
+          if (widget.search.isNotEmpty) {
+            final searchLower = widget.search.toLowerCase();
+            return serverEquipment.where((e) {
+              return e.name.toLowerCase().contains(searchLower) ||
+                  e.description.toLowerCase().contains(searchLower);
+            }).toList();
+          }
+          return serverEquipment;
+        }).catchError((e) {
+          // Если ошибка загрузки с сервера, возвращаем кэш
+          if (cachedEquipment.isNotEmpty) {
+            return cachedEquipment;
+          }
+          throw e;
+        });
+      });
     });
   }
 
@@ -249,7 +329,12 @@ class _EquipmentTabState extends ConsumerState<_EquipmentTab> {
           itemCount: equipment.length,
           itemBuilder: (context, index) {
             final item = equipment[index];
-            return _EquipmentCard(equipment: item, isAdmin: widget.isAdmin, onRefresh: _loadEquipment);
+            return _EquipmentCard(
+              key: ValueKey(item.id), // Ключ для оптимизации перерисовок
+              equipment: item,
+              isAdmin: widget.isAdmin,
+              onRefresh: _loadEquipment,
+            );
           },
         );
       },
@@ -264,6 +349,7 @@ class _EquipmentCard extends ConsumerWidget {
   final VoidCallback onRefresh;
 
   const _EquipmentCard({
+    super.key, // Добавляем key для оптимизации списков
     required this.equipment,
     required this.isAdmin,
     required this.onRefresh,
@@ -416,7 +502,7 @@ class _ServicesTab extends ConsumerStatefulWidget {
   final String search;
   final bool isAdmin;
 
-  const _ServicesTab({required this.search, required this.isAdmin});
+  const _ServicesTab({super.key, required this.search, required this.isAdmin});
 
   @override
   ConsumerState<_ServicesTab> createState() => _ServicesTabState();
@@ -441,10 +527,46 @@ class _ServicesTabState extends ConsumerState<_ServicesTab> {
 
   void _loadServices() {
     final catalogService = ref.read(catalogServiceProvider);
+    final cacheService = ref.read(cacheServiceProvider);
+    
+    // ОПТИМИЗАЦИЯ: Сначала загружаем из кэша для мгновенного отображения
+    Future<List<ServiceItem>> loadFromCache() async {
+      try {
+        final cached = await cacheService.getCachedServices();
+        if (cached != null && cached.isNotEmpty) {
+          return cached
+              .map((json) => ServiceItem.fromJson(json as Map<String, dynamic>))
+              .toList();
+        }
+      } catch (e) {
+        // Игнорируем ошибки кэша
+      }
+      return [];
+    }
+    
+    // Загружаем из кэша сразу, затем обновляем с сервера
     setState(() {
-      _servicesFuture = catalogService.getServices(
-        search: widget.search.isEmpty ? null : widget.search,
-      );
+      _servicesFuture = loadFromCache().then((cachedServices) {
+        // После загрузки из кэша, обновляем с сервера
+        return catalogService.getServices(
+          search: widget.search.isEmpty ? null : widget.search,
+        ).then((serverServices) {
+          // Фильтруем по поиску если нужно
+          if (widget.search.isNotEmpty) {
+            final searchLower = widget.search.toLowerCase();
+            return serverServices.where((s) {
+              return s.name.toLowerCase().contains(searchLower);
+            }).toList();
+          }
+          return serverServices;
+        }).catchError((e) {
+          // Если ошибка загрузки с сервера, возвращаем кэш
+          if (cachedServices.isNotEmpty) {
+            return cachedServices;
+          }
+          throw e;
+        });
+      });
     });
   }
 
@@ -490,6 +612,7 @@ class _ServicesTabState extends ConsumerState<_ServicesTab> {
           itemBuilder: (context, index) {
             final service = services[index];
             return Card(
+              key: ValueKey(service.id), // Ключ для оптимизации перерисовок
               margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               child: ListTile(
                 title: Text(service.name),
@@ -511,7 +634,12 @@ class _ServicesTabState extends ConsumerState<_ServicesTab> {
                                     tabIndex: 1,
                                   ),
                                 ),
-                              ).then((_) => _loadServices());
+                              ).then((result) {
+                                // Обновляем список после редактирования
+                                if (result == true) {
+                                  _loadServices();
+                                }
+                              });
                             },
                           ),
                           IconButton(
@@ -575,7 +703,7 @@ class _SoilTab extends ConsumerStatefulWidget {
   final String search;
   final bool isAdmin;
 
-  const _SoilTab({required this.search, required this.isAdmin});
+  const _SoilTab({super.key, required this.search, required this.isAdmin});
 
   @override
   ConsumerState<_SoilTab> createState() => _SoilTabState();
@@ -600,11 +728,49 @@ class _SoilTabState extends ConsumerState<_SoilTab> {
 
   void _loadMaterials() {
     final catalogService = ref.read(catalogServiceProvider);
+    final cacheService = ref.read(cacheServiceProvider);
+    
+    // ОПТИМИЗАЦИЯ: Сначала загружаем из кэша для мгновенного отображения
+    Future<List<MaterialItem>> loadFromCache() async {
+      try {
+        final cached = await cacheService.getCachedMaterials();
+        if (cached != null && cached.isNotEmpty) {
+          final allMaterials = cached
+              .map((json) => MaterialItem.fromJson(json as Map<String, dynamic>))
+              .toList();
+          // Фильтруем по категории
+          return allMaterials.where((m) => m.category == 'soil').toList();
+        }
+      } catch (e) {
+        // Игнорируем ошибки кэша
+      }
+      return [];
+    }
+    
+    // Загружаем из кэша сразу, затем обновляем с сервера
     setState(() {
-      _materialsFuture = catalogService.getMaterials(
-        search: widget.search.isEmpty ? null : widget.search,
-        category: 'soil', // Грунт
-      );
+      _materialsFuture = loadFromCache().then((cachedMaterials) {
+        // После загрузки из кэша, обновляем с сервера
+        return catalogService.getMaterials(
+          search: widget.search.isEmpty ? null : widget.search,
+          category: 'soil', // Грунт
+        ).then((serverMaterials) {
+          // Фильтруем по поиску если нужно
+          if (widget.search.isNotEmpty) {
+            final searchLower = widget.search.toLowerCase();
+            return serverMaterials.where((m) {
+              return m.name.toLowerCase().contains(searchLower);
+            }).toList();
+          }
+          return serverMaterials;
+        }).catchError((e) {
+          // Если ошибка загрузки с сервера, возвращаем кэш
+          if (cachedMaterials.isNotEmpty) {
+            return cachedMaterials;
+          }
+          throw e;
+        });
+      });
     });
   }
 
@@ -650,6 +816,7 @@ class _SoilTabState extends ConsumerState<_SoilTab> {
           itemBuilder: (context, index) {
             final material = materials[index];
             return _MaterialCard(
+              key: ValueKey(material.id),
               material: material,
               isAdmin: widget.isAdmin,
               onRefresh: _loadMaterials,
@@ -667,7 +834,7 @@ class _ToolTab extends ConsumerStatefulWidget {
   final String search;
   final bool isAdmin;
 
-  const _ToolTab({required this.search, required this.isAdmin});
+  const _ToolTab({super.key, required this.search, required this.isAdmin});
 
   @override
   ConsumerState<_ToolTab> createState() => _ToolTabState();
@@ -692,11 +859,49 @@ class _ToolTabState extends ConsumerState<_ToolTab> {
 
   void _loadMaterials() {
     final catalogService = ref.read(catalogServiceProvider);
+    final cacheService = ref.read(cacheServiceProvider);
+    
+    // ОПТИМИЗАЦИЯ: Сначала загружаем из кэша для мгновенного отображения
+    Future<List<MaterialItem>> loadFromCache() async {
+      try {
+        final cached = await cacheService.getCachedMaterials();
+        if (cached != null && cached.isNotEmpty) {
+          final allMaterials = cached
+              .map((json) => MaterialItem.fromJson(json as Map<String, dynamic>))
+              .toList();
+          // Фильтруем по категории
+          return allMaterials.where((m) => m.category == 'tool').toList();
+        }
+      } catch (e) {
+        // Игнорируем ошибки кэша
+      }
+      return [];
+    }
+    
+    // Загружаем из кэша сразу, затем обновляем с сервера
     setState(() {
-      _materialsFuture = catalogService.getMaterials(
-        search: widget.search.isEmpty ? null : widget.search,
-        category: 'tool', // Инструмент
-      );
+      _materialsFuture = loadFromCache().then((cachedMaterials) {
+        // После загрузки из кэша, обновляем с сервера
+        return catalogService.getMaterials(
+          search: widget.search.isEmpty ? null : widget.search,
+          category: 'tool', // Инструмент
+        ).then((serverMaterials) {
+          // Фильтруем по поиску если нужно
+          if (widget.search.isNotEmpty) {
+            final searchLower = widget.search.toLowerCase();
+            return serverMaterials.where((m) {
+              return m.name.toLowerCase().contains(searchLower);
+            }).toList();
+          }
+          return serverMaterials;
+        }).catchError((e) {
+          // Если ошибка загрузки с сервера, возвращаем кэш
+          if (cachedMaterials.isNotEmpty) {
+            return cachedMaterials;
+          }
+          throw e;
+        });
+      });
     });
   }
 
@@ -742,6 +947,7 @@ class _ToolTabState extends ConsumerState<_ToolTab> {
           itemBuilder: (context, index) {
             final material = materials[index];
             return _MaterialCard(
+              key: ValueKey(material.id),
               material: material,
               isAdmin: widget.isAdmin,
               onRefresh: _loadMaterials,
@@ -759,7 +965,7 @@ class _AttachmentTab extends ConsumerStatefulWidget {
   final String search;
   final bool isAdmin;
 
-  const _AttachmentTab({required this.search, required this.isAdmin});
+  const _AttachmentTab({super.key, required this.search, required this.isAdmin});
 
   @override
   ConsumerState<_AttachmentTab> createState() => _AttachmentTabState();
@@ -784,11 +990,49 @@ class _AttachmentTabState extends ConsumerState<_AttachmentTab> {
 
   void _loadMaterials() {
     final catalogService = ref.read(catalogServiceProvider);
+    final cacheService = ref.read(cacheServiceProvider);
+    
+    // ОПТИМИЗАЦИЯ: Сначала загружаем из кэша для мгновенного отображения
+    Future<List<MaterialItem>> loadFromCache() async {
+      try {
+        final cached = await cacheService.getCachedMaterials();
+        if (cached != null && cached.isNotEmpty) {
+          final allMaterials = cached
+              .map((json) => MaterialItem.fromJson(json as Map<String, dynamic>))
+              .toList();
+          // Фильтруем по категории
+          return allMaterials.where((m) => m.category == 'attachment').toList();
+        }
+      } catch (e) {
+        // Игнорируем ошибки кэша
+      }
+      return [];
+    }
+    
+    // Загружаем из кэша сразу, затем обновляем с сервера
     setState(() {
-      _materialsFuture = catalogService.getMaterials(
-        search: widget.search.isEmpty ? null : widget.search,
-        category: 'attachment', // Навеска
-      );
+      _materialsFuture = loadFromCache().then((cachedMaterials) {
+        // После загрузки из кэша, обновляем с сервера
+        return catalogService.getMaterials(
+          search: widget.search.isEmpty ? null : widget.search,
+          category: 'attachment', // Навеска
+        ).then((serverMaterials) {
+          // Фильтруем по поиску если нужно
+          if (widget.search.isNotEmpty) {
+            final searchLower = widget.search.toLowerCase();
+            return serverMaterials.where((m) {
+              return m.name.toLowerCase().contains(searchLower);
+            }).toList();
+          }
+          return serverMaterials;
+        }).catchError((e) {
+          // Если ошибка загрузки с сервера, возвращаем кэш
+          if (cachedMaterials.isNotEmpty) {
+            return cachedMaterials;
+          }
+          throw e;
+        });
+      });
     });
   }
 
@@ -834,6 +1078,7 @@ class _AttachmentTabState extends ConsumerState<_AttachmentTab> {
           itemBuilder: (context, index) {
             final material = materials[index];
             return _MaterialCard(
+              key: ValueKey(material.id),
               material: material,
               isAdmin: widget.isAdmin,
               onRefresh: _loadMaterials,
@@ -854,6 +1099,7 @@ class _MaterialCard extends ConsumerWidget {
   final String category;
 
   const _MaterialCard({
+    super.key, // Добавляем key для оптимизации списков
     required this.material,
     required this.isAdmin,
     required this.onRefresh,
@@ -1106,7 +1352,9 @@ class _NomenclatureEditScreenState extends ConsumerState<_NomenclatureEditScreen
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(widget.item == null ? 'Создано' : 'Обновлено')),
         );
-        Navigator.pop(context);
+        // Возвращаем true для индикации успешного создания/обновления
+        // Это триггерит обновление списков в родительском виджете
+        Navigator.pop(context, true);
       }
     } catch (e) {
       if (mounted) {

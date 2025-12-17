@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import '../../../core/providers/reports_refresh_provider.dart';
 import '../services/finance_service.dart';
 
 /// Экран отчётов
@@ -113,22 +114,28 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> with SingleTicker
           ),
           // Контент
           Expanded(
-            child: TabBarView(
-              controller: _tabController,
-              children: [
-                _SummaryReportTab(
-                  period: _selectedPeriod,
-                  key: ValueKey(_selectedPeriod?.toString()),
-                ),
-                _EquipmentReportTab(
-                  period: _selectedPeriod,
-                  key: ValueKey(_selectedPeriod?.toString()),
-                ),
-                _EmployeeReportTab(
-                  period: _selectedPeriod,
-                  key: ValueKey(_selectedPeriod?.toString()),
-                ),
-              ],
+            child: Consumer(
+              builder: (context, ref, child) {
+                // Слушаем изменения триггера обновления отчетов
+                final refreshKey = ref.watch(reportsRefreshProvider);
+                return TabBarView(
+                  controller: _tabController,
+                  children: [
+                    _SummaryReportTab(
+                      period: _selectedPeriod,
+                      key: ValueKey('summary_${_selectedPeriod?.toString()}_$refreshKey'),
+                    ),
+                    _EquipmentReportTab(
+                      period: _selectedPeriod,
+                      key: ValueKey('equipment_${_selectedPeriod?.toString()}_$refreshKey'),
+                    ),
+                    _EmployeeReportTab(
+                      period: _selectedPeriod,
+                      key: ValueKey('employee_${_selectedPeriod?.toString()}_$refreshKey'),
+                    ),
+                  ],
+                );
+              },
             ),
           ),
         ],
@@ -183,6 +190,7 @@ class _SummaryReportTabState extends ConsumerState<_SummaryReportTab> {
       _loadReport();
     }
   }
+
 
   Future<void> _loadReport() async {
     setState(() {
@@ -489,6 +497,7 @@ class _EquipmentReportTabState extends ConsumerState<_EquipmentReportTab> {
     }
   }
 
+
   Future<void> _loadReport() async {
     setState(() {
       _isLoading = true;
@@ -696,6 +705,7 @@ class _EmployeeReportTabState extends ConsumerState<_EmployeeReportTab> {
       _loadReport();
     }
   }
+
 
   Future<void> _loadReport() async {
     setState(() {

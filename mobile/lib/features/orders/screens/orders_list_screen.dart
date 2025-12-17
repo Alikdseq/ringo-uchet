@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/constants/status_colors.dart';
 import '../../../core/offline/cache_service.dart';
+import '../../../core/utils/debouncer.dart';
 import '../../../shared/widgets/offline_banner.dart';
 import '../../../shared/widgets/offline_queue_indicator.dart';
 import '../../../features/auth/providers/auth_providers.dart';
@@ -22,7 +23,9 @@ class OrdersListScreen extends ConsumerStatefulWidget {
 class _OrdersListScreenState extends ConsumerState<OrdersListScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final _searchController = TextEditingController();
+  final _debouncer = Debouncer(delay: const Duration(milliseconds: 300));
   List<Order> _allOrders = [];
+  List<Order> _filteredOrders = []; // Кэшированные отфильтрованные заявки
   bool _isLoading = false;
   String? _error;
   
@@ -41,6 +44,33 @@ class _OrdersListScreenState extends ConsumerState<OrdersListScreen> with Single
     // +1 для вкладки "Все"
     _tabController = TabController(length: _statusOrder.length + 1, vsync: this);
     _loadOrders();
+    // Оптимизация: debounce для поиска
+    _searchController.addListener(_onSearchChanged);
+  }
+  
+  void _onSearchChanged() {
+    // Используем debounce чтобы не фильтровать на каждое нажатие клавиши
+    _debouncer.call(() {
+      if (mounted) {
+        setState(() {
+          _updateFilteredOrders();
+        });
+      }
+    });
+  }
+  
+  void _updateFilteredOrders() {
+    // Мгновенная фильтрация в памяти (быстро)
+    final searchQuery = _searchController.text.toLowerCase();
+    if (searchQuery.isEmpty) {
+      _filteredOrders = _allOrders;
+    } else {
+      _filteredOrders = _allOrders.where((order) {
+        return order.number.toLowerCase().contains(searchQuery) ||
+            order.address.toLowerCase().contains(searchQuery) ||
+            (order.client != null && order.client!.name.toLowerCase().contains(searchQuery));
+      }).toList();
+    }
   }
   
   @override
@@ -97,101 +127,112 @@ class _OrdersListScreenState extends ConsumerState<OrdersListScreen> with Single
 
   @override
   void dispose() {
+    _debouncer.dispose();
+    _searchController.removeListener(_onSearchChanged);
     _tabController.dispose();
     _searchController.dispose();
     super.dispose();
   }
 
   Future<void> _loadOrders({bool useCache = true}) async {
-    setState(() {
-      _isLoading = true;
-      _error = null;
-    });
+    // КРИТИЧНО: Сначала загружаем из кэша БЕЗ показа индикатора загрузки
+    // Данные из кэша доступны мгновенно, UI не блокируется
+    if (useCache) {
+      try {
+        final cacheService = ref.read(cacheServiceProvider);
+        final authState = ref.read(authStateProvider);
+        final user = authState.user;
+        final cachedOrders = await cacheService.getCachedOrders();
+        
+        if (cachedOrders != null && cachedOrders.isNotEmpty) {
+          var orders = cachedOrders
+              .map((json) => Order.fromJson(json as Map<String, dynamic>))
+              .toList();
+          
+          // Если пользователь - оператор, фильтруем только его заявки
+          if (user?.role == 'operator' && user?.id != null) {
+            final operatorId = user!.id;
+            orders = orders.where((order) {
+              final byId = order.operatorId == operatorId;
+              final byObject = order.operator != null && order.operator!.id == operatorId;
+              return byId || byObject;
+            }).toList();
+          }
+          
+          // МГНОВЕННО показываем данные из кэша без индикатора загрузки
+          if (mounted) {
+            setState(() {
+              _allOrders = orders;
+              _updateFilteredOrders();
+              _isLoading = false; // UI готов сразу
+              _error = null;
+            });
+          }
+        }
+      } catch (e) {
+        // Если кэш недоступен, продолжаем загрузку с сервера
+      }
+    }
+    
+    // Только если кэша нет или нужно обновление - показываем индикатор и загружаем с сервера
+    if (_allOrders.isEmpty || !useCache) {
+      setState(() {
+        _isLoading = true;
+        _error = null;
+      });
+    }
 
     try {
       final orderService = ref.read(orderServiceProvider);
       final authState = ref.read(authStateProvider);
       final user = authState.user;
       
-      // ОПТИМИЗАЦИЯ: Сначала загружаем из кэша для мгновенного отображения
-      if (useCache) {
-        try {
-          final cacheService = ref.read(cacheServiceProvider);
-          final cachedOrders = await cacheService.getCachedOrders();
-          if (cachedOrders != null && cachedOrders.isNotEmpty) {
-            var orders = cachedOrders
-                .map((json) => Order.fromJson(json as Map<String, dynamic>))
-                .toList();
-            
-            // Если пользователь - оператор, фильтруем только его заявки
-            if (user?.role == 'operator' && user?.id != null) {
-              final operatorId = user!.id;
-              orders = orders.where((order) {
-                final byId = order.operatorId == operatorId;
-                final byObject = order.operator != null && order.operator!.id == operatorId;
-                return byId || byObject;
-              }).toList();
-            }
-            
-            // Исключаем удаленные заявки для не-админов
-            if (user?.role != 'admin' && user?.role != 'manager') {
-              // Удаленные заявки больше не существуют в БД, фильтрация не нужна
-            }
-            
-            // Показываем кэшированные данные МГНОВЕННО
-            setState(() {
-              _allOrders = orders;
-              _isLoading = false; // UI готов, данные из кэша
-            });
-          }
-        } catch (e) {
-          // Если кэш недоступен, продолжаем загрузку с сервера
-        }
+      // Обновляем данные с сервера в фоне (не блокирует UI если есть кэш)
+      var orders = await orderService.getOrders(
+        search: _searchController.text.isEmpty ? null : _searchController.text,
+        useCache: true,
+      );
+      
+      // Если пользователь - оператор, фильтруем только его заявки
+      if (user?.role == 'operator' && user?.id != null) {
+        final operatorId = user!.id;
+        orders = orders.where((order) {
+          final byId = order.operatorId == operatorId;
+          final byObject = order.operator != null && order.operator!.id == operatorId;
+          return byId || byObject;
+        }).toList();
       }
       
-      // Затем в ФОНЕ обновляем данные с сервера
-      try {
-        // Загружаем все заявки без фильтра по статусу
-        var orders = await orderService.getOrders(
-          search: _searchController.text.isEmpty ? null : _searchController.text,
-          useCache: true,
-        );
-        
-        // Если пользователь - оператор, фильтруем только его заявки
-        if (user?.role == 'operator' && user?.id != null) {
-          final operatorId = user!.id;
-          orders = orders.where((order) {
-            final byId = order.operatorId == operatorId;
-            final byObject = order.operator != null && order.operator!.id == operatorId;
-            return byId || byObject;
-          }).toList();
-        }
-        
-        // Удаленные заявки больше не существуют в БД, фильтрация не нужна
-        
+      if (mounted) {
         setState(() {
           _allOrders = orders;
+          _updateFilteredOrders();
           _isLoading = false;
         });
-      } catch (e) {
-        // Если обновление не удалось, оставляем данные из кэша
+      }
+    } catch (e) {
+      // Если обновление не удалось, оставляем данные из кэша (если есть)
+      if (mounted) {
         if (_allOrders.isEmpty) {
           setState(() {
             _error = e.toString();
             _isLoading = false;
           });
+        } else {
+          // Данные из кэша уже показаны, просто скрываем индикатор
+          setState(() {
+            _isLoading = false;
+          });
         }
       }
-    } catch (e) {
-      setState(() {
-        _error = e.toString();
-        _isLoading = false;
-      });
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final authState = ref.read(authStateProvider); // Используем read вместо watch для избежания перерисовок
+    final isOperator = authState.user?.role == 'operator';
+    
     return Scaffold(
       body: Column(
         children: [
@@ -233,7 +274,7 @@ class _OrdersListScreenState extends ConsumerState<OrdersListScreen> with Single
                   borderRadius: BorderRadius.circular(12),
                 ),
               ),
-              onChanged: (_) => setState(() {}), // Обновляем UI для фильтрации
+              // Оптимизация: фильтрация происходит через debounce в _onSearchChanged
               onSubmitted: (_) => _loadOrders(),
             ),
           ),
@@ -412,16 +453,18 @@ class _OrdersListScreenState extends ConsumerState<OrdersListScreen> with Single
                         children: [
                           // Вкладка "Все" с цветными индикаторами
                           _AllOrdersTab(
-                            orders: _allOrders,
+                            orders: _filteredOrders,
                             search: _searchController.text,
+                            isOperator: isOperator,
                             onRefresh: _loadOrders,
                           ),
                           // Вкладки по статусам
                           ..._statusOrder.map((status) {
                             return _OrderStatusTab(
                               status: status,
-                              orders: _allOrders,
+                              orders: _filteredOrders,
                               search: _searchController.text,
+                              isOperator: isOperator,
                               onRefresh: _loadOrders,
                             );
                           }).toList(),
@@ -452,31 +495,24 @@ class _OrdersListScreenState extends ConsumerState<OrdersListScreen> with Single
 }
 
 /// Вкладка всех заявок с цветами этапов
+/// Оптимизация: поиск уже применен на уровне родителя через _filteredOrders
 class _AllOrdersTab extends StatelessWidget {
   final List<Order> orders;
   final String search;
+  final bool isOperator;
   final VoidCallback onRefresh;
 
   const _AllOrdersTab({
     required this.orders,
     required this.search,
+    required this.isOperator,
     required this.onRefresh,
   });
 
   @override
   Widget build(BuildContext context) {
-    // Фильтруем заявки по поисковому запросу
-    var filteredOrders = orders;
-    
-    // Применяем поиск, если есть
-    if (search.isNotEmpty) {
-      final searchLower = search.toLowerCase();
-      filteredOrders = filteredOrders.where((order) {
-        return order.number.toLowerCase().contains(searchLower) ||
-            order.address.toLowerCase().contains(searchLower) ||
-            (order.client != null && order.client!.name.toLowerCase().contains(searchLower));
-      }).toList();
-    }
+    // Поиск уже применен на уровне родителя через _filteredOrders
+    final filteredOrders = orders;
 
     if (filteredOrders.isEmpty) {
       return Center(
@@ -507,8 +543,11 @@ class _AllOrdersTab extends StatelessWidget {
         itemCount: filteredOrders.length,
         itemBuilder: (context, index) {
           final order = filteredOrders[index];
+          // Оптимизация: используем key для эффективного обновления списка
           return _OrderCard(
+            key: ValueKey(order.id), // Ключ для оптимизации перерисовок
             order: order,
+            isOperator: isOperator, // Передаем роль
             onTap: () {
               Navigator.push(
                 context,
@@ -525,33 +564,26 @@ class _AllOrdersTab extends StatelessWidget {
 }
 
 /// Вкладка заявок по статусу
+/// Оптимизация: поиск уже применен на уровне родителя, фильтруем только по статусу
 class _OrderStatusTab extends StatelessWidget {
   final OrderStatus status;
   final List<Order> orders;
   final String search;
+  final bool isOperator;
   final VoidCallback onRefresh;
 
   const _OrderStatusTab({
     required this.status,
     required this.orders,
     required this.search,
+    required this.isOperator,
     required this.onRefresh,
   });
 
   @override
   Widget build(BuildContext context) {
-    // Фильтруем заявки по статусу и поисковому запросу
-    var filteredOrders = orders.where((order) => order.status == status).toList();
-    
-    // Применяем поиск, если есть
-    if (search.isNotEmpty) {
-      final searchLower = search.toLowerCase();
-      filteredOrders = filteredOrders.where((order) {
-        return order.number.toLowerCase().contains(searchLower) ||
-            order.address.toLowerCase().contains(searchLower) ||
-            (order.client != null && order.client!.name.toLowerCase().contains(searchLower));
-      }).toList();
-    }
+    // Поиск уже применен на уровне родителя, фильтруем только по статусу
+    final filteredOrders = orders.where((order) => order.status == status).toList();
 
     if (filteredOrders.isEmpty) {
       return Center(
@@ -582,8 +614,11 @@ class _OrderStatusTab extends StatelessWidget {
         itemCount: filteredOrders.length,
         itemBuilder: (context, index) {
           final order = filteredOrders[index];
+          // Оптимизация: используем key для эффективного обновления списка
           return _OrderCard(
+            key: ValueKey(order.id), // Ключ для оптимизации перерисовок
             order: order,
+            isOperator: isOperator, // Передаем роль
             onTap: () {
               Navigator.push(
                 context,
@@ -600,23 +635,24 @@ class _OrderStatusTab extends StatelessWidget {
 }
 
 /// Карточка заявки
-class _OrderCard extends ConsumerWidget {
+/// Оптимизация: используем StatelessWidget вместо ConsumerWidget для избежания лишних перерисовок
+class _OrderCard extends StatelessWidget {
   final Order order;
   final VoidCallback onTap;
+  final bool isOperator; // Передаем извне вместо ref.watch
 
   const _OrderCard({
+    super.key, // Добавляем key для оптимизации списков
     required this.order,
     required this.onTap,
+    this.isOperator = false,
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final statusColor = StatusColors.getOrderStatusColor(
       order.status.toString().split('.').last.toUpperCase(),
     );
-    final authState = ref.watch(authStateProvider);
-    final user = authState.user;
-    final isOperator = user?.role == 'operator';
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),

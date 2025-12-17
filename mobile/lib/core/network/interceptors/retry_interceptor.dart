@@ -17,8 +17,8 @@ class RetryInterceptor extends Interceptor {
       if (retryCount < AppConstants.maxRetryAttempts) {
         err.requestOptions.extra['retryCount'] = retryCount + 1;
 
-        // Экспоненциальная задержка: 1s, 2s, 4s
-        final delaySeconds = 1 << retryCount;
+        // Экспоненциальная задержка: 2s, 4s, 8s (увеличено для медленных соединений)
+        final delaySeconds = 2 << retryCount;
         await Future.delayed(Duration(seconds: delaySeconds));
 
         try {

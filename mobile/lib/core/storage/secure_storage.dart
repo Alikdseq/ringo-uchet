@@ -45,7 +45,7 @@ class SecureStorage {
     return false;
   }
 
-  /// Очистить все токены
+  /// Очистить все токены (не затрагивает сохраненные учетные данные)
   Future<void> clearTokens() async {
     await _storage.delete(key: AppConstants.storageTokenKey);
     await _storage.delete(key: AppConstants.storageRefreshTokenKey);

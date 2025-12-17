@@ -7,6 +7,9 @@ import 'core/theme/app_theme.dart';
 import 'core/theme/app_localizations.dart';
 import 'core/config/firebase_service.dart';
 import 'core/offline/sync_service.dart';
+import 'core/offline/cache_service.dart';
+import 'core/network/connectivity_service.dart';
+import 'core/constants/app_constants.dart';
 import 'features/auth/providers/auth_providers.dart';
 import 'features/auth/screens/login_screen.dart';
 import 'features/orders/screens/dashboard_screen.dart';
@@ -25,6 +28,7 @@ import 'features/orders/screens/offline_queue_screen.dart';
 import 'features/notifications/screens/notification_settings_screen.dart';
 import 'features/notifications/services/notification_service.dart';
 import 'shared/widgets/screen_wrapper.dart';
+import 'shared/widgets/offline_banner.dart';
 import 'core/providers/navigation_provider.dart';
 
 // Глобальный ключ для навигации (для deep links)
@@ -78,8 +82,9 @@ class _RingoAppState extends ConsumerState<RingoApp> {
               debugPrint('Sync service error (non-critical): $e');
             }
           }
-          // Запускаем предзагрузку данных в фоне для мгновенного доступа
-          _preloadData();
+          // КРИТИЧНО: Предзагрузка данных из кэша ПЕРЕД открытием экрана
+          // Затем обновление с сервера в фоне
+          _preloadDataFromCacheFirst();
         }
       });
     } catch (e) {
@@ -125,26 +130,101 @@ class _RingoAppState extends ConsumerState<RingoApp> {
     }
   }
 
-  /// Предзагрузка данных в фоне для мгновенного доступа
-  void _preloadData() {
-    // Запускаем предзагрузку асинхронно, не блокируя UI
-    Future.microtask(() {
+  /// Предзагрузка данных: СНАЧАЛА из кэша (мгновенно), затем с сервера (в фоне)
+  /// ПОЛНАЯ ОФФЛАЙН ПОДДЕРЖКА: Приложение работает даже без интернета
+  Future<void> _preloadDataFromCacheFirst() async {
+    try {
+      final orderService = ref.read(orderServiceProvider);
+      final catalogService = ref.read(catalogServiceProvider);
+      final cacheService = ref.read(cacheServiceProvider);
+      final connectivityService = ref.read(connectivityServiceProvider);
+      
+      // ШАГ 1: Мгновенная загрузка из кэша (если есть) - не блокирует UI
+      // КРИТИЧНО: Данные из кэша доступны мгновенно, даже БЕЗ интернета
       try {
-        final orderService = ref.read(orderServiceProvider);
-        final catalogService = ref.read(catalogServiceProvider);
+        final cachedOrders = await cacheService.getCachedOrders();
+        final cachedEquipment = await cacheService.getCachedEquipment();
+        final cachedServices = await cacheService.getCachedServices();
+        final cachedMaterials = await cacheService.getCachedMaterials();
         
-        // Параллельная предзагрузка всех основных данных
-        Future.wait([
-          orderService.getOrders(useCache: true).catchError((e) => <Order>[]),
-          catalogService.getEquipment().catchError((e) => <Equipment>[]),
-          catalogService.getServices().catchError((e) => <ServiceItem>[]),
-          catalogService.getMaterials().catchError((e) => <MaterialItem>[]),
-        ], eagerError: false);
+        if (cachedOrders != null || cachedEquipment != null || 
+            cachedServices != null || cachedMaterials != null) {
+          debugPrint('✅ Cache data available - app works OFFLINE instantly');
+        }
       } catch (e) {
-        // Игнорируем ошибки предзагрузки
-        debugPrint('Preload data error (non-critical): $e');
+        // Кэш недоступен - не критично
+        debugPrint('Cache check error (non-critical): $e');
       }
-    });
+      
+      // ШАГ 2: Проверяем наличие интернета перед обновлением
+      final hasConnection = await connectivityService.hasConnection();
+      
+      if (!hasConnection) {
+        debugPrint('📴 No internet - using cache only. App works OFFLINE.');
+        // Запускаем автосинхронизацию для автоматического обновления при появлении интернета
+        if (!kIsWeb) {
+          try {
+            final syncService = ref.read(syncServiceProvider);
+            syncService.startAutoSync();
+          } catch (e) {
+            debugPrint('Sync service error (non-critical): $e');
+          }
+        }
+        return; // Нет интернета - используем только кэш
+      }
+      
+      // ШАГ 3: Обновление с сервера в фоне (если есть интернет)
+      // ОПТИМИЗАЦИЯ ДЛЯ VPN: Увеличенный таймаут для медленных соединений
+      // При таймауте/ошибке используется кэш, поэтому UI не блокируется
+      Future.microtask(() async {
+        try {
+          final startTime = DateTime.now();
+          
+          await Future.wait([
+            orderService.getOrders(useCache: true).catchError((e) {
+              debugPrint('Preload orders error: $e');
+              return <Order>[];
+            }),
+            catalogService.getEquipment().catchError((e) {
+              debugPrint('Preload equipment error: $e');
+              return <Equipment>[];
+            }),
+            catalogService.getServices().catchError((e) {
+              debugPrint('Preload services error: $e');
+              return <ServiceItem>[];
+            }),
+            catalogService.getMaterials().catchError((e) {
+              debugPrint('Preload materials error: $e');
+              return <MaterialItem>[];
+            }),
+          ], eagerError: false).timeout(
+            const Duration(seconds: AppConstants.preloadTimeoutSeconds),
+            onTimeout: () {
+              final elapsed = DateTime.now().difference(startTime);
+              debugPrint('⚠️ Preload timeout (${AppConstants.preloadTimeoutSeconds}s, elapsed: ${elapsed.inSeconds}s) - cache will be used');
+              return [<Order>[], <Equipment>[], <ServiceItem>[], <MaterialItem>[]];
+            },
+          );
+          
+          final elapsed = DateTime.now().difference(startTime);
+          debugPrint('✅ Data updated from server in background (${elapsed.inSeconds}s)');
+          
+          // После успешного обновления синхронизируем оффлайн очередь
+          if (!kIsWeb) {
+            try {
+              final syncService = ref.read(syncServiceProvider);
+              await syncService.syncQueue();
+            } catch (e) {
+              debugPrint('Queue sync error (non-critical): $e');
+            }
+          }
+        } catch (e) {
+          debugPrint('⚠️ Background preload error (cache will be used): $e');
+        }
+      });
+    } catch (e) {
+      debugPrint('Preload critical error (non-critical): $e');
+    }
   }
 
   @override
@@ -174,40 +254,176 @@ class _RingoAppState extends ConsumerState<RingoApp> {
         );
       },
       // Навигация на основе состояния аутентификации
-      // Оптимизация: показываем главный экран сразу если есть кэш пользователя, даже если еще загружается
-      home: authState.isAuthenticated
-          ? const _HomeScreen()
-          : authState.isLoading
-              ? const _SplashScreen()
+      // Показываем красивый splash screen пока идет загрузка/проверка авторизации
+      // Затем показываем главный экран если авторизован, иначе экран входа
+      home: authState.isLoading
+          ? const _SplashScreen()
+          : authState.isAuthenticated
+              ? const _HomeScreenWithOfflineBanner()
               : const LoginScreen(),
       routes: {
         '/login': (context) => const LoginScreen(),
-        '/home': (context) => const _HomeScreen(),
+        '/home': (context) => const _HomeScreenWithOfflineBanner(),
       },
     );
   }
 }
 
-/// Экран загрузки
-class _SplashScreen extends StatelessWidget {
+/// Красивый экран загрузки с индикатором
+class _SplashScreen extends StatefulWidget {
   const _SplashScreen();
 
   @override
+  State<_SplashScreen> createState() => _SplashScreenState();
+}
+
+class _SplashScreenState extends State<_SplashScreen> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _fadeAnimation;
+  late Animation<double> _scaleAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 1500),
+      vsync: this,
+    )..repeat(reverse: true);
+
+    _fadeAnimation = Tween<double>(
+      begin: 0.5,
+      end: 1.0,
+    ).animate(CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeInOut,
+    ));
+
+    _scaleAnimation = Tween<double>(
+      begin: 0.9,
+      end: 1.0,
+    ).animate(CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeInOut,
+    ));
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    
     return Scaffold(
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const CircularProgressIndicator(),
-            const SizedBox(height: 24),
-            Text(
-              AppLocalizations.of(context)?.appName ?? 'Ringo Uchet',
-              style: Theme.of(context).textTheme.headlineMedium,
-            ),
-          ],
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: isDark
+                ? [
+                    theme.colorScheme.surface,
+                    theme.colorScheme.surface.withOpacity(0.8),
+                  ]
+                : [
+                    theme.colorScheme.primaryContainer.withOpacity(0.3),
+                    theme.colorScheme.surface,
+                  ],
+          ),
+        ),
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // Анимированный логотип/иконка
+              AnimatedBuilder(
+                animation: _controller,
+                builder: (context, child) {
+                  return Transform.scale(
+                    scale: _scaleAnimation.value,
+                    child: Opacity(
+                      opacity: _fadeAnimation.value,
+                      child: Container(
+                        width: 120,
+                        height: 120,
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.primary,
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: theme.colorScheme.primary.withOpacity(0.3),
+                              blurRadius: 20,
+                              spreadRadius: 5,
+                            ),
+                          ],
+                        ),
+                        child: Icon(
+                          Icons.account_circle,
+                          size: 80,
+                          color: theme.colorScheme.onPrimary,
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 48),
+              
+              // Название приложения
+              Text(
+                AppLocalizations.of(context)?.appName ?? 'Ringo Uchet',
+                style: theme.textTheme.headlineMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: theme.colorScheme.onSurface,
+                ),
+              ),
+              const SizedBox(height: 8),
+              
+              // Подзаголовок
+              Text(
+                'Загрузка...',
+                style: theme.textTheme.bodyLarge?.copyWith(
+                  color: theme.colorScheme.onSurface.withOpacity(0.7),
+                ),
+              ),
+              const SizedBox(height: 48),
+              
+              // Индикатор загрузки
+              SizedBox(
+                width: 40,
+                height: 40,
+                child: CircularProgressIndicator(
+                  strokeWidth: 3,
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    theme.colorScheme.primary,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
+    );
+  }
+}
+
+/// Главный экран с оффлайн баннером
+class _HomeScreenWithOfflineBanner extends ConsumerWidget {
+  const _HomeScreenWithOfflineBanner();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Column(
+      children: [
+        // Оффлайн баннер (показывается только когда нет интернета)
+        const OfflineBanner(),
+        // Главный экран
+        const Expanded(child: _HomeScreen()),
+      ],
     );
   }
 }
@@ -232,6 +448,8 @@ class _HomeScreenState extends ConsumerState<_HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Оптимизация: используем watch только для authState (нужен для навигации)
+    // Остальные данные читаем через read для избежания лишних перерисовок
     final authState = ref.watch(authStateProvider);
     final user = authState.user;
     final userRole = user?.role ?? 'user';

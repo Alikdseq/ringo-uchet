@@ -53,6 +53,7 @@ MIDDLEWARE = [
     "ringo_backend.middleware.security.XSSProtectionMiddleware",  # XSS protection
     "ringo_backend.middleware.security.SSRFProtectionMiddleware",  # SSRF protection
     "django.middleware.security.SecurityMiddleware",
+    "django.middleware.gzip.GZipMiddleware",  # Сжатие ответов для ускорения загрузки
     "corsheaders.middleware.CorsMiddleware",
     "django_prometheus.middleware.PrometheusAfterMiddleware",  # Prometheus metrics
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -162,6 +163,11 @@ REST_FRAMEWORK = {
         "rest_framework.throttling.UserRateThrottle",
     ],
     "DEFAULT_THROTTLE_RATES": {"anon": "30/min", "user": "120/min"},
+    # Пагинация для оптимизации загрузки данных
+    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
+    "PAGE_SIZE": 50,  # Размер страницы по умолчанию
+    "PAGE_SIZE_QUERY_PARAM": "page_size",  # Параметр для изменения размера страницы
+    "MAX_PAGE_SIZE": 200,  # Максимальный размер страницы
 }
 
 SPECTACULAR_SETTINGS = {

@@ -154,7 +154,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   }
 
   Widget _buildKPICards() {
-    final authState = ref.watch(authStateProvider);
+    // Оптимизация: используем read вместо watch для избежания лишних перерисовок
+    final authState = ref.read(authStateProvider);
     final user = authState.user;
     final isAdmin = user?.role == 'admin';
     final navigationNotifier = ref.read(navigationIndexProvider.notifier);

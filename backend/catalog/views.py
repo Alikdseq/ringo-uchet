@@ -26,7 +26,8 @@ from .serializers import (
     ),
 )
 class EquipmentViewSet(viewsets.ModelViewSet):
-    queryset = Equipment.objects.all()
+    # Оптимизация: используем select_related/prefetch_related для уменьшения количества запросов
+    queryset = Equipment.objects.all().select_related().prefetch_related()
     serializer_class = EquipmentSerializer
     filter_backends = (DjangoFilterBackend, SearchFilter, OrderingFilter)
     filterset_fields = ("status",)
@@ -52,7 +53,8 @@ class ServiceItemViewSet(viewsets.ModelViewSet):
     retrieve=extend_schema(summary="Детали материала", description="Получить детальную информацию о материале", tags=["Catalog"]),
 )
 class MaterialItemViewSet(viewsets.ModelViewSet):
-    queryset = MaterialItem.objects.all()
+    # Оптимизация: используем select_related/prefetch_related для уменьшения количества запросов
+    queryset = MaterialItem.objects.all().select_related().prefetch_related()
     serializer_class = MaterialItemSerializer
     filter_backends = (DjangoFilterBackend, SearchFilter, OrderingFilter)
     filterset_fields = ("is_active", "category")
@@ -61,7 +63,7 @@ class MaterialItemViewSet(viewsets.ModelViewSet):
     
     def get_queryset(self):
         """Переопределяем queryset для правильной фильтрации"""
-        qs = MaterialItem.objects.all()
+        qs = MaterialItem.objects.all().select_related().prefetch_related()
         # По умолчанию показываем только активные, если не указано иное
         is_active_param = self.request.query_params.get("is_active")
         if is_active_param is None:

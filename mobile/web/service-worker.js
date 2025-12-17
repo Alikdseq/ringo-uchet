@@ -81,48 +81,61 @@ function fetchWithTimeout(request, timeout) {
 async function fetchWithRetry(request, maxRetries = MAX_RETRIES, timeout = NETWORK_TIMEOUT) {
   let lastError;
   
-  // Сохраняем параметры запроса для создания новых Request объектов
-  // Клонируем request ДО использования, чтобы получить body
-  const requestClone = request.clone();
-  const url = request.url;
+  // КРИТИЧНО: Для navigate запросов нельзя создавать новый Request с mode: 'navigate'
+  // Используем исходный request напрямую
+  const isNavigateRequest = request.mode === 'navigate';
   
-  // Получаем body если есть (для POST/PUT/DELETE)
-  let bodyData = null;
-  if (request.body !== null && request.method !== 'GET' && request.method !== 'HEAD') {
-    try {
-      bodyData = await requestClone.arrayBuffer();
-    } catch (e) {
-      // Если не удалось получить body, пробуем без него
-      console.warn('[Service Worker] Could not clone request body:', e);
+  let requestClone = null;
+  let url = request.url;
+  let init = null;
+  
+  if (!isNavigateRequest) {
+    // Для обычных запросов создаем новый Request объект
+    // Клонируем request ДО использования, чтобы получить body
+    requestClone = request.clone();
+    
+    // Получаем body если есть (для POST/PUT/DELETE)
+    let bodyData = null;
+    if (request.body !== null && request.method !== 'GET' && request.method !== 'HEAD') {
+      try {
+        bodyData = await requestClone.arrayBuffer();
+      } catch (e) {
+        // Если не удалось получить body, пробуем без него
+        console.warn('[Service Worker] Could not clone request body:', e);
+      }
     }
+    
+    // Копируем headers
+    const headers = new Headers();
+    if (request.headers) {
+      request.headers.forEach((value, key) => {
+        headers.append(key, value);
+      });
+    }
+    
+    init = {
+      method: request.method,
+      headers: headers,
+      body: bodyData,
+      mode: request.mode, // Для не-navigate запросов можно копировать mode
+      credentials: request.credentials,
+      cache: request.cache,
+      redirect: request.redirect,
+      referrer: request.referrer,
+      integrity: request.integrity,
+    };
   }
-  
-  // Копируем headers
-  const headers = new Headers();
-  if (request.headers) {
-    request.headers.forEach((value, key) => {
-      headers.append(key, value);
-    });
-  }
-  
-  const init = {
-    method: request.method,
-    headers: headers,
-    body: bodyData,
-    mode: request.mode,
-    credentials: request.credentials,
-    cache: request.cache,
-    redirect: request.redirect,
-    referrer: request.referrer,
-    integrity: request.integrity,
-  };
   
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      // Создаем новый Request объект для каждой попытки
-      const newRequest = new Request(url, init);
+      // Для navigate запросов используем исходный request напрямую
+      // Для других запросов создаем новый Request объект
+      const requestToUse = isNavigateRequest 
+        ? request 
+        : new Request(url, init);
+      
       console.log(`[Service Worker] Fetch attempt ${attempt}/${maxRetries} for ${url}`);
-      const response = await fetchWithTimeout(newRequest, timeout);
+      const response = await fetchWithTimeout(requestToUse, timeout);
       
       // Проверяем успешность ответа
       if (response.ok || response.status < 500) {

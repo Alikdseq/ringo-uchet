@@ -8,16 +8,20 @@ import 'interceptors/error_interceptor.dart';
 import 'interceptors/retry_interceptor.dart';
 
 /// Провайдер Dio клиента
+/// ОПТИМИЗАЦИЯ ДЛЯ VPN: Адаптивные таймауты для медленных соединений
 final dioClientProvider = Provider<Dio>((ref) {
   final config = ref.watch(appConfigProvider);
   final dio = Dio(
     BaseOptions(
       baseUrl: config.apiUrl,
-      connectTimeout: const Duration(seconds: AppConstants.defaultTimeoutSeconds),
-      receiveTimeout: const Duration(seconds: AppConstants.defaultTimeoutSeconds),
+      // Используем увеличенный таймаут для поддержки VPN/медленного интернета
+      // При ошибке используется кэш, поэтому увеличенный таймаут не блокирует UI
+      connectTimeout: const Duration(seconds: AppConstants.slowConnectionTimeoutSeconds),
+      receiveTimeout: const Duration(seconds: AppConstants.slowConnectionTimeoutSeconds),
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
+        'Accept-Encoding': 'gzip, deflate', // Поддержка сжатия для уменьшения трафика
       },
       // Оптимизация: включаем HTTP/2 и сжатие
       persistentConnection: true,

@@ -21,6 +21,7 @@ class OrderService {
   OrderService(this._dio, this._ref);
 
   /// Получить список заказов
+  /// ОПТИМИЗАЦИЯ: Поддержка пагинации для быстрой загрузки
   Future<List<Order>> getOrders({
     OrderStatus? status,
     String? search,
@@ -36,11 +37,15 @@ class OrderService {
       if (search != null && search.isNotEmpty) {
         queryParams['search'] = search;
       }
+      // Оптимизация: используем пагинацию для быстрой загрузки
       if (page != null) {
         queryParams['page'] = page;
       }
       if (pageSize != null) {
         queryParams['page_size'] = pageSize;
+      } else {
+        // По умолчанию загружаем больше данных для уменьшения количества запросов
+        queryParams['page_size'] = 100;
       }
 
       final response = await _dio.get('/orders/', queryParameters: queryParams);
@@ -66,16 +71,27 @@ class OrderService {
 
       return orders;
     } on DioException catch (e) {
-      // Если нет сети, пытаемся получить из кэша
+      // ОПТИМИЗАЦИЯ ДЛЯ VPN: При любой сетевой ошибке или таймауте используем кэш
+      // Это позволяет работать даже при очень медленном VPN соединении
       if (e.type == DioExceptionType.connectionError ||
+          e.type == DioExceptionType.connectionTimeout ||
+          e.type == DioExceptionType.receiveTimeout ||
+          e.type == DioExceptionType.sendTimeout ||
+          e.type == DioExceptionType.badResponse || // Иногда VPN возвращает странные ответы
           e.error is SocketException) {
         if (useCache) {
-          final cacheService = _ref.read(cacheServiceProvider);
-          final cached = await cacheService.getCachedOrders();
-          if (cached != null) {
-            return cached
-                .map((json) => Order.fromJson(json as Map<String, dynamic>))
-                .toList();
+          try {
+            final cacheService = _ref.read(cacheServiceProvider);
+            final cached = await cacheService.getCachedOrders();
+            if (cached != null && cached.isNotEmpty) {
+              // Возвращаем кэшированные данные вместо ошибки
+              // Пользователь видит данные мгновенно, обновление произойдет в фоне когда соединение улучшится
+              return cached
+                  .map((json) => Order.fromJson(json as Map<String, dynamic>))
+                  .toList();
+            }
+          } catch (cacheError) {
+            // Если кэш недоступен, продолжаем с ошибкой
           }
         }
       }

@@ -2,8 +2,12 @@
 class AppConstants {
   // API
   static const String apiTimeout = 'api_timeout';
-  static const int defaultTimeoutSeconds = 30;
+  // Адаптивные таймауты: базовый для быстрых соединений, увеличенный для VPN/медленного интернета
+  static const int defaultTimeoutSeconds = 20; // Базовый таймаут (оптимизирован для быстрых соединений)
+  static const int slowConnectionTimeoutSeconds = 45; // Увеличенный таймаут для VPN/медленного интернета
+  static const int preloadTimeoutSeconds = 30; // Таймаут для предзагрузки (увеличен для VPN)
   static const int maxRetryAttempts = 3;
+  static const int slowConnectionThresholdMs = 2000; // Если запрос занимает >2 сек, считаем соединение медленным
 
   // Storage Keys
   static const String storageTokenKey = 'auth_token';

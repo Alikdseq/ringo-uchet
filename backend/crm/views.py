@@ -9,7 +9,8 @@ from .serializers import ClientSerializer
 
 
 class ClientViewSet(viewsets.ModelViewSet):
-    queryset = Client.objects.all()
+    # Оптимизация: используем select_related/prefetch_related для уменьшения количества запросов
+    queryset = Client.objects.all().select_related().prefetch_related()
     serializer_class = ClientSerializer
     filter_backends = (DjangoFilterBackend, SearchFilter)
     filterset_fields = ("is_active", "city")

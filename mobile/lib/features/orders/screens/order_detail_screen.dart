@@ -14,6 +14,7 @@ import 'download_helper_stub.dart'
     if (dart.library.html) 'download_helper_web.dart'
     as download_helper;
 import '../../../core/constants/status_colors.dart';
+import '../../../core/providers/reports_refresh_provider.dart';
 import '../../auth/providers/auth_providers.dart';
 import '../../auth/services/user_service.dart';
 import '../models/order_models.dart';
@@ -146,6 +147,11 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
       final orderService = ref.read(orderServiceProvider);
       await orderService.changeOrderStatus(widget.orderId, result);
       await _loadOrder();
+      
+      // КРИТИЧНО: Обновляем отчеты при изменении статуса (особенно при завершении)
+      // Это обеспечивает моментальное обновление отчетов без перезагрузки экрана
+      ref.read(reportsRefreshProvider.notifier).state++;
+      
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Статус изменён')),
@@ -928,6 +934,12 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
       // Перезагружаем заявку для получения актуальных данных
       await _loadOrder();
       
+      // КРИТИЧНО: Если заявка завершена, обновляем отчеты немедленно
+      // Это обеспечивает моментальное отображение изменений в отчетах
+      if (updatedOrder.status == OrderStatus.completed) {
+        ref.read(reportsRefreshProvider.notifier).state++;
+      }
+      
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1030,6 +1042,12 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
       // Перезагружаем заявку для получения актуальных данных
       await _loadOrder();
       
+      // КРИТИЧНО: Если заявка завершена, обновляем отчеты немедленно
+      // Это обеспечивает моментальное отображение изменений в отчетах
+      if (updatedOrder.status == OrderStatus.completed) {
+        ref.read(reportsRefreshProvider.notifier).state++;
+      }
+      
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Изменения сохранены')),
@@ -1100,6 +1118,10 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
     try {
       final orderService = ref.read(orderServiceProvider);
       await orderService.deleteOrder(widget.orderId);
+      
+      // Мгновенно обновляем отчеты после удаления заявки
+      ref.read(reportsRefreshProvider.notifier).state++;
+      
       if (mounted) {
         Navigator.pop(context, true); // Возвращаемся к списку заявок
         ScaffoldMessenger.of(context).showSnackBar(
