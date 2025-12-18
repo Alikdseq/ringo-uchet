@@ -155,14 +155,78 @@ export default function EquipmentReportPage() {
           </div>
         ) : null}
 
-        <DataTable<EquipmentReportItemWithId>
-          columns={columns}
-          data={rows}
-          emptyText={
-            isLoading ? "Загружаем отчёт по технике..." : "Нет данных за период"
-          }
-          maxVisibleRows={200}
-        />
+        {/* Мобильная версия: каждая строка как карточка, всё помещается по ширине */}
+        <div className="space-y-2 md:hidden">
+          {rows.length === 0 ? (
+            <div className="rounded-md border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-xs text-slate-500">
+              {isLoading
+                ? "Загружаем отчёт по технике..."
+                : "Нет данных за период"}
+            </div>
+          ) : (
+            rows.map((row) => (
+              <div
+                key={row.id}
+                className="rounded-lg border border-slate-200 bg-white p-3 text-xs shadow-sm"
+              >
+                <div className="mb-1 font-semibold text-slate-900">
+                  {row.equipmentName || "Без названия"}
+                </div>
+                <div className="mb-2 text-[11px] text-slate-500">
+                  Код: {row.code}
+                </div>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] text-slate-600">
+                  <div>
+                    <div className="text-[10px] uppercase tracking-wide text-slate-400">
+                      Часы
+                    </div>
+                    <div className="font-medium text-slate-900">
+                      {row.totalHours.toFixed(1)}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] uppercase tracking-wide text-slate-400">
+                      Выручка
+                    </div>
+                    <div className="font-medium text-slate-900">
+                      {formatCurrency(row.revenue)}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] uppercase tracking-wide text-slate-400">
+                      Расходы
+                    </div>
+                    <div className="font-medium text-slate-900">
+                      {formatCurrency(row.expenses)}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] uppercase tracking-wide text-slate-400">
+                      Топливо
+                    </div>
+                    <div className="font-medium text-slate-900">
+                      {formatCurrency(row.fuelExpenses)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Десктоп / планшет: классическая таблица */}
+        <div className="hidden md:block">
+          <DataTable<EquipmentReportItemWithId>
+            columns={columns}
+            data={rows}
+            emptyText={
+              isLoading
+                ? "Загружаем отчёт по технике..."
+                : "Нет данных за период"
+            }
+            maxVisibleRows={200}
+          />
+        </div>
       </section>
     </RoleGuard>
   );

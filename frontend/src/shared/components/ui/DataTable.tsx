@@ -41,37 +41,39 @@ export function DataTable<T extends { id?: string | number }>({
 
   return (
     <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-      <table className="min-w-full divide-y divide-slate-200 text-sm">
-        <thead className="bg-slate-50">
-          <tr>
-            {columns.map((column) => (
-              <th
-                key={String(column.key)}
-                scope="col"
-                className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500"
-              >
-                {column.header}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-100 bg-white">
-          {visibleData.map((row, rowIndex) => (
-            <tr key={(row.id as string | number | undefined) ?? rowIndex}>
+      <div className="w-full overflow-x-auto">
+        <table className="min-w-full divide-y divide-slate-200 text-sm">
+          <thead className="bg-slate-50">
+            <tr>
               {columns.map((column) => (
-                <td
+                <th
                   key={String(column.key)}
-                  className="whitespace-nowrap px-3 py-2 text-xs text-slate-700"
+                  scope="col"
+                  className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500"
                 >
-                  {column.render
-                    ? column.render(row)
-                    : String(row[column.key] ?? "")}
-                </td>
+                  {column.header}
+                </th>
               ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody className="divide-y divide-slate-100 bg-white">
+            {visibleData.map((row, rowIndex) => (
+              <tr key={(row.id as string | number | undefined) ?? rowIndex}>
+                {columns.map((column) => (
+                  <td
+                    key={String(column.key)}
+                    className="px-3 py-2 text-xs text-slate-700 align-top whitespace-normal"
+                  >
+                    {column.render
+                      ? column.render(row)
+                      : String(row[column.key] ?? "")}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
       {isTruncated ? (
         <div className="border-t border-slate-200 bg-slate-50 px-3 py-1.5 text-[10px] text-slate-500">
           Показаны первые {visibleData.length} из {data.length} записей.

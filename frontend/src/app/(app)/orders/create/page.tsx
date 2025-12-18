@@ -160,6 +160,46 @@ export default function OrderCreatePage() {
     }
   }, []);
 
+  const handleSelectClient = (client: ClientListItem) => {
+    setSelectedClient(client);
+
+    // Автоподстановка основных полей по выбранному клиенту
+    setNewClientName(client.name ?? "");
+    setNewClientPhone(client.phone ?? "");
+
+    if (client.email) {
+      setNewClientEmail(client.email);
+    }
+
+    // Адрес подставляем только если пользователь ещё ничего не вводил
+    if (!address && client.address) {
+      setAddress(client.address);
+    }
+  };
+
+  // Если черновик уже содержит выбранного клиента, но поля ещё пустые —
+  // один раз подставляем их из клиента (мгновенное заполнение при открытии)
+  useEffect(() => {
+    if (!selectedClient) return;
+
+    const hasName = newClientName.trim().length > 0;
+    const hasPhone = newClientPhone.trim().length > 0;
+
+    if (!hasName) {
+      setNewClientName(selectedClient.name ?? "");
+    }
+    if (!hasPhone) {
+      setNewClientPhone(selectedClient.phone ?? "");
+    }
+    if (!newClientEmail && selectedClient.email) {
+      setNewClientEmail(selectedClient.email);
+    }
+    if (!address && selectedClient.address) {
+      setAddress(selectedClient.address);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedClient]);
+
   useEffect(() => {
     const loadOperators = async () => {
       try {
@@ -638,7 +678,7 @@ export default function OrderCreatePage() {
                           ? "bg-slate-900 text-white"
                           : "hover:bg-slate-200"
                       }`}
-                      onClick={() => setSelectedClient(client)}
+                      onClick={() => handleSelectClient(client)}
                     >
                       <span className="truncate">
                         {client.name} · {client.phone}
