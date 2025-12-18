@@ -245,9 +245,9 @@ export const CatalogApi = {
     payload: Partial<{
       name: string;
       phone: string;
-      email: string | null;
-      address: string | null;
-      city: string | null;
+      email: string;
+      address: string;
+      city: string;
     }>,
   ): Promise<ClientInfo> {
     const response = await httpClient.patch<unknown>(`/clients/${id}/`, payload);

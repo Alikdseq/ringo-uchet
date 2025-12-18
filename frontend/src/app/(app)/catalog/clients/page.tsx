@@ -22,7 +22,7 @@ export default function ClientsCatalogPage() {
   const [editAddress, setEditAddress] = useState("");
   const [editError, setEditError] = useState<string | null>(null);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
-  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [clientToDelete, setClientToDelete] = useState<ClientInfo | null>(null);
 
   const { data, isLoading, isError, error: queryError, refetch } = useQuery<
     ClientInfo[]
@@ -78,8 +78,10 @@ export default function ClientsCatalogPage() {
       await CatalogApi.updateClient(editingId, {
         name: editName.trim(),
         phone: editPhone.trim(),
-        email: editEmail.trim() ? editEmail.trim() : null,
-        address: editAddress.trim() ? editAddress.trim() : null,
+        // Для email и адреса backend ожидает пустую строку,
+        // а не null, поэтому просто передаём строку (включая пустую).
+        email: editEmail.trim(),
+        address: editAddress.trim(),
       });
       cancelEdit();
       await refetch();
@@ -94,23 +96,22 @@ export default function ClientsCatalogPage() {
     }
   };
 
-  const handleDeleteClient = async (client: ClientInfo) => {
-    if (
-      !window.confirm(
-        `Удалить клиента "${client.name}"? Заявки, которые уже привязаны к нему, сохранятся с этим клиентом в истории.`,
-      )
-    ) {
-      return;
-    }
+  const requestDeleteClient = (client: ClientInfo) => {
+    setClientToDelete(client);
+    setError(null);
+  };
 
-    setDeletingId(client.id);
+  const handleConfirmDeleteClient = async () => {
+    if (!clientToDelete) return;
+
+    setDeletingId(clientToDelete.id);
 
     try {
-      await CatalogApi.deleteClient(client.id);
-      // Если удаляем клиента, которого сейчас редактируем — сбрасываем форму
-      if (editingId === client.id) {
+      await CatalogApi.deleteClient(clientToDelete.id);
+      if (editingId === clientToDelete.id) {
         cancelEdit();
       }
+      setClientToDelete(null);
       await refetch();
     } catch (err) {
       const message =
@@ -121,6 +122,10 @@ export default function ClientsCatalogPage() {
     } finally {
       setDeletingId(null);
     }
+  };
+
+  const handleCancelDeleteClient = () => {
+    setClientToDelete(null);
   };
 
   const handleCreateClient = async (event: FormEvent) => {
@@ -278,7 +283,7 @@ export default function ClientsCatalogPage() {
                       <button
                         type="button"
                         aria-label="Удалить"
-                        onClick={() => void handleDeleteClient(client)}
+                        onClick={() => requestDeleteClient(client)}
                         disabled={deletingId === client.id}
                         className={
                           deletingId === client.id
@@ -302,6 +307,40 @@ export default function ClientsCatalogPage() {
           );
         })}
       </div>
+
+      {clientToDelete ? (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 px-3">
+          <div className="w-full max-w-sm rounded-lg bg-white p-4 text-xs shadow-lg">
+            <div className="mb-2 text-sm font-semibold text-slate-900">
+              Удалить клиента?
+            </div>
+            <div className="text-[11px] text-slate-600">
+              Клиент{" "}
+              <span className="font-semibold">{clientToDelete.name}</span> будет
+              удалён из справочника. Заявки, которые уже привязаны к нему,{" "}
+              <span className="font-semibold">останутся в истории</span> с этим
+              именем.
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={handleCancelDeleteClient}
+                className="inline-flex items-center rounded-md border border-slate-300 bg-white px-3 py-1.5 text-[11px] font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleConfirmDeleteClient()}
+                disabled={deletingId === clientToDelete.id}
+                className="inline-flex items-center rounded-md bg-rose-500 px-3 py-1.5 text-[11px] font-medium text-white shadow-sm hover:bg-rose-600 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Удалить
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <form
         onSubmit={handleCreateClient}
