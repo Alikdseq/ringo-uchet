@@ -15,6 +15,15 @@ export default function ClientsCatalogPage() {
   const [email, setEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
 
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editPhone, setEditPhone] = useState("");
+  const [editEmail, setEditEmail] = useState("");
+  const [editAddress, setEditAddress] = useState("");
+  const [editError, setEditError] = useState<string | null>(null);
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+
   const { data, isLoading, isError, error: queryError, refetch } = useQuery<
     ClientInfo[]
   >({
@@ -36,6 +45,83 @@ export default function ClientsCatalogPage() {
         ? queryError.message
         : "Не удалось загрузить список клиентов";
   }
+
+  const startEditClient = (client: ClientInfo) => {
+    setEditingId(client.id);
+    setEditName(client.name);
+    setEditPhone(client.phone);
+    setEditEmail(client.email ?? "");
+    setEditAddress(client.address ?? "");
+    setEditError(null);
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditName("");
+    setEditPhone("");
+    setEditEmail("");
+    setEditAddress("");
+    setEditError(null);
+  };
+
+  const handleSaveEdit = async () => {
+    if (editingId == null) return;
+    if (!editName.trim() || !editPhone.trim()) {
+      setEditError("Имя и телефон обязательны");
+      return;
+    }
+
+    setIsSavingEdit(true);
+    setEditError(null);
+
+    try {
+      await CatalogApi.updateClient(editingId, {
+        name: editName.trim(),
+        phone: editPhone.trim(),
+        email: editEmail.trim() ? editEmail.trim() : null,
+        address: editAddress.trim() ? editAddress.trim() : null,
+      });
+      cancelEdit();
+      await refetch();
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Не удалось обновить клиента, попробуйте позже";
+      setEditError(message);
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
+
+  const handleDeleteClient = async (client: ClientInfo) => {
+    if (
+      !window.confirm(
+        `Удалить клиента "${client.name}"? Заявки, которые уже привязаны к нему, сохранятся с этим клиентом в истории.`,
+      )
+    ) {
+      return;
+    }
+
+    setDeletingId(client.id);
+
+    try {
+      await CatalogApi.deleteClient(client.id);
+      // Если удаляем клиента, которого сейчас редактируем — сбрасываем форму
+      if (editingId === client.id) {
+        cancelEdit();
+      }
+      await refetch();
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Не удалось удалить клиента, попробуйте позже";
+      setError(message);
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   const handleCreateClient = async (event: FormEvent) => {
     event.preventDefault();
@@ -97,35 +183,124 @@ export default function ClientsCatalogPage() {
       ) : null}
 
       <div className="space-y-2">
-        {items.map((client) => (
-          <Card
-            key={client.id}
-            className="flex items-center justify-between rounded-xl px-3 py-2 text-xs"
-          >
-            <div className="space-y-0.5">
-              <div className="text-sm font-semibold text-slate-900">
-                {client.name}
+        {items.map((client) => {
+          const isEditing = editingId === client.id;
+
+          return (
+            <Card
+              key={client.id}
+              className="rounded-xl px-3 py-2 text-xs"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex-1 space-y-0.5">
+                  {isEditing ? (
+                    <>
+                      <div className="space-y-1.5">
+                        <input
+                          type="text"
+                          className="block w-full rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-900 shadow-sm outline-none ring-0 placeholder:text-slate-400 focus:border-slate-900"
+                          value={editName}
+                          onChange={(event) => setEditName(event.target.value)}
+                          placeholder="Имя клиента"
+                        />
+                        <input
+                          type="tel"
+                          className="block w-full rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-900 shadow-sm outline-none ring-0 placeholder:text-slate-400 focus:border-slate-900"
+                          value={editPhone}
+                          onChange={(event) => setEditPhone(event.target.value)}
+                          placeholder="Телефон"
+                        />
+                        <input
+                          type="email"
+                          className="block w-full rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-900 shadow-sm outline-none ring-0 placeholder:text-slate-400 focus:border-slate-900"
+                          value={editEmail}
+                          onChange={(event) => setEditEmail(event.target.value)}
+                          placeholder="Email (опционально)"
+                        />
+                        <textarea
+                          className="block w-full rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-900 shadow-sm outline-none ring-0 placeholder:text-slate-400 focus:border-slate-900"
+                          rows={2}
+                          value={editAddress}
+                          onChange={(event) =>
+                            setEditAddress(event.target.value)
+                          }
+                          placeholder="Адрес (опционально)"
+                        />
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="text-sm font-semibold text-slate-900">
+                        {client.name}
+                      </div>
+                      <div className="text-[11px] text-slate-500">
+                        {client.phone}
+                        {client.email ? ` · ${client.email}` : ""}
+                      </div>
+                      {client.address ? (
+                        <div className="text-[11px] text-slate-500">
+                          {client.address}
+                        </div>
+                      ) : null}
+                    </>
+                  )}
+                </div>
+                <div className="flex gap-2 text-lg text-slate-400">
+                  {isEditing ? (
+                    <>
+                      <button
+                        type="button"
+                        aria-label="Сохранить"
+                        onClick={() => void handleSaveEdit()}
+                        disabled={isSavingEdit}
+                        className="text-green-600 disabled:opacity-60"
+                      >
+                        ✔
+                      </button>
+                      <button
+                        type="button"
+                        aria-label="Отменить"
+                        onClick={cancelEdit}
+                        className="text-slate-400"
+                      >
+                        ✕
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        aria-label="Редактировать"
+                        onClick={() => startEditClient(client)}
+                      >
+                        ✏️
+                      </button>
+                      <button
+                        type="button"
+                        aria-label="Удалить"
+                        onClick={() => void handleDeleteClient(client)}
+                        disabled={deletingId === client.id}
+                        className={
+                          deletingId === client.id
+                            ? "opacity-60"
+                            : "hover:text-red-600"
+                        }
+                      >
+                        🗑
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
-              <div className="text-[11px] text-slate-500">
-                {client.phone}
-                {client.email ? ` · ${client.email}` : ""}
-              </div>
-              {client.address ? (
-                <div className="text-[11px] text-slate-500">
-                  {client.address}
+
+              {isEditing && editError ? (
+                <div className="mt-2 rounded-md border border-red-200 bg-red-50 px-3 py-1.5 text-[11px] text-red-700">
+                  {editError}
                 </div>
               ) : null}
-            </div>
-            <div className="flex gap-2 text-lg text-slate-400">
-              <button type="button" aria-label="Редактировать">
-                ✏️
-              </button>
-              <button type="button" aria-label="Удалить">
-                🗑
-              </button>
-            </div>
-          </Card>
-        ))}
+            </Card>
+          );
+        })}
       </div>
 
       <form

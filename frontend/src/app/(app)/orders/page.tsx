@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import React, { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { OrdersApi } from "@/shared/api/ordersApi";
@@ -89,6 +90,7 @@ function formatMoney(value?: number | null): string {
 }
 
 export default function OrdersPage() {
+  const router = useRouter();
   const [status, setStatus] = useState<TabKey>("ALL");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
@@ -177,6 +179,17 @@ export default function OrdersPage() {
     }
   }
 
+  const handleOpenDraft = () => {
+    router.push("/orders/create");
+  };
+
+  const handleDeleteDraft = () => {
+    if (typeof window === "undefined") return;
+
+    window.localStorage.removeItem(ORDER_DRAFT_STORAGE_KEY);
+    setDraftSummary(null);
+  };
+
   return (
     <section className="space-y-4 pb-6">
       <div className="space-y-2">
@@ -249,8 +262,12 @@ export default function OrdersPage() {
           <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
             Черновики
           </div>
-          <Link href="/orders/create">
-            <Card className="mb-1 flex items-center justify-between rounded-xl border-dashed border-sky-300 bg-sky-50 px-3 py-3 text-sm shadow-sm">
+          <Card className="mb-1 rounded-xl border-dashed border-sky-300 bg-sky-50 px-3 py-3 text-sm shadow-sm">
+            <button
+              type="button"
+              onClick={handleOpenDraft}
+              className="flex w-full items-center justify-between gap-3 text-left"
+            >
               <div className="space-y-1">
                 <div className="text-sm font-semibold text-slate-900">
                   Заявка (черновик)
@@ -280,8 +297,17 @@ export default function OrdersPage() {
                   Нажмите, чтобы продолжить заполнение
                 </div>
               </div>
-            </Card>
-          </Link>
+            </button>
+            <div className="mt-2 flex justify-end">
+              <button
+                type="button"
+                onClick={handleDeleteDraft}
+                className="inline-flex items-center rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] font-medium text-slate-600 shadow-sm hover:bg-slate-100"
+              >
+                🗑 <span className="ml-1">Удалить черновик</span>
+              </button>
+            </div>
+          </Card>
         </div>
       ) : null}
 

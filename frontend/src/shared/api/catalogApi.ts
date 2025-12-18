@@ -59,6 +59,31 @@ export interface ClientsListParams {
   search?: string;
 }
 
+function mapClientFromApi(payload: unknown): ClientInfo {
+  const raw = (payload ?? {}) as Record<string, unknown>;
+
+  return {
+    id: typeof raw.id === "number" ? raw.id : 0,
+    name: String(raw.name ?? ""),
+    contactPerson:
+      (raw.contact_person as string | null | undefined) ??
+      (raw.contactPerson as string | null | undefined) ??
+      null,
+    phone: String(raw.phone ?? ""),
+    email: (raw.email as string | null | undefined) ?? null,
+    address: (raw.address as string | null | undefined) ?? null,
+    city: (raw.city as string | null | undefined) ?? null,
+    geoLat:
+      typeof raw.geo_lat === "number"
+        ? raw.geo_lat
+        : null,
+    geoLng:
+      typeof raw.geo_lng === "number"
+        ? raw.geo_lng
+        : null,
+  };
+}
+
 export const CatalogApi = {
   async getEquipment(params: EquipmentListParams = {}): Promise<Equipment[]> {
     const query: Record<string, unknown> = {};
@@ -212,29 +237,25 @@ export const CatalogApi = {
       },
     );
 
-    return mapMaybePaginated(response.data, (payload) => {
-      const raw = (payload ?? {}) as Record<string, unknown>;
-      return {
-        id: typeof raw.id === "number" ? raw.id : 0,
-        name: String(raw.name ?? ""),
-        contactPerson:
-          (raw.contact_person as string | null | undefined) ??
-          (raw.contactPerson as string | null | undefined) ??
-          null,
-        phone: String(raw.phone ?? ""),
-        email: (raw.email as string | null | undefined) ?? null,
-        address: (raw.address as string | null | undefined) ?? null,
-        city: (raw.city as string | null | undefined) ?? null,
-        geoLat:
-          typeof raw.geo_lat === "number"
-            ? raw.geo_lat
-            : null,
-        geoLng:
-          typeof raw.geo_lng === "number"
-            ? raw.geo_lng
-            : null,
-      };
-    });
+    return mapMaybePaginated(response.data, mapClientFromApi);
+  },
+
+  async updateClient(
+    id: number,
+    payload: Partial<{
+      name: string;
+      phone: string;
+      email: string | null;
+      address: string | null;
+      city: string | null;
+    }>,
+  ): Promise<ClientInfo> {
+    const response = await httpClient.patch<unknown>(`/clients/${id}/`, payload);
+    return mapClientFromApi(response.data);
+  },
+
+  async deleteClient(id: number): Promise<void> {
+    await httpClient.delete(`/clients/${id}/`);
   },
 };
 
