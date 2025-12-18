@@ -47,9 +47,9 @@
   --color-status-cancelled: var(--status-cancelled);
   --color-status-deleted: var(--status-deleted);
 
-  /* Чуть увеличенные размеры шрифта по умолчанию во всём приложении */
-  --text-xs: 0.8rem;
-  --text-sm: 0.95rem;
+  /* Увеличенные размеры шрифта по умолчанию во всём приложении */
+  --text-xs: 0.9rem;
+  --text-sm: 1rem;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -64,6 +64,12 @@ body {
   color: var(--color-foreground);
   font-family: var(--font-geist-sans), system-ui, -apple-system, BlinkMacSystemFont,
     "Segoe UI", sans-serif;
+}
+
+/* Внутри каталога возвращаем чуть меньший размер шрифта (как был раньше) */
+.catalog-scope {
+  --text-xs: 0.8rem;
+  --text-sm: 0.95rem;
 }
 
 /* Мобильная читаемость и жёсткое отключение авто-зумирования при фокусе */

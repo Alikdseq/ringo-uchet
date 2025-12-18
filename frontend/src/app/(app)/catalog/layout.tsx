@@ -20,7 +20,7 @@ export default function CatalogLayout({
   const pathname = usePathname();
 
   return (
-    <section className="space-y-4">
+    <section className="catalog-scope space-y-4">
       <PageHeader
         title="Каталог"
         subtitle="Техника, услуги, материалы и клиенты."
