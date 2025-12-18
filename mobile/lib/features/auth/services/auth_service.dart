@@ -122,16 +122,32 @@ class AuthService {
   }
 
   /// Обновление access token
+  /// Использует validateStatus чтобы 401 не считался ошибкой Dio (ожидаемый случай)
   Future<String> refreshToken(String refreshToken) async {
     try {
+      // Используем validateStatus чтобы 401 не логировался как ошибка в консоль
+      // Это ожидаемое поведение когда refresh token истек
       final response = await _dio.post(
         '/token/refresh/',
         data: {'refresh': refreshToken},
+        options: Options(
+          validateStatus: (status) {
+            // Разрешаем 200-299 и 401 как валидные статусы
+            // 401 будет обработан вручную, чтобы не логировать ошибку
+            return status != null && (status >= 200 && status < 300 || status == 401);
+          },
+        ),
       );
+
+      // Если 401 - refresh token истек, это ожидаемо
+      if (response.statusCode == 401) {
+        throw AppException.unauthorized('Refresh token недействителен');
+      }
 
       final refreshResponse = RefreshTokenResponse.fromJson(response.data);
       return refreshResponse.access;
     } on DioException catch (e) {
+      // DioException может возникнуть только для необработанных статусов (не 401)
       if (e.response?.statusCode == 401) {
         throw AppException.unauthorized('Refresh token недействителен');
       } else if (e.error is AppException) {

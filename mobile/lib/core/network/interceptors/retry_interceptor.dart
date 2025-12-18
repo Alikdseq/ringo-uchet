@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import '../../constants/app_constants.dart';
 
 /// Interceptor для повторных попыток запросов при ошибках
@@ -24,16 +25,23 @@ class RetryInterceptor extends Interceptor {
         try {
           // Используем переданный Dio клиент или создаем новый с увеличенными таймаутами
           final timeoutSeconds = (AppConstants.defaultTimeoutSeconds + (retryCount * 5)).toInt();
-          final dioClient = dio ?? Dio(BaseOptions(
-            connectTimeout: Duration(seconds: timeoutSeconds),
-            receiveTimeout: Duration(seconds: timeoutSeconds),
-          ));
           
           // Копируем requestOptions с увеличенными таймаутами
           final options = err.requestOptions.copyWith(
             connectTimeout: Duration(seconds: timeoutSeconds),
             receiveTimeout: Duration(seconds: timeoutSeconds),
           );
+          
+          // Удаляем Accept-Encoding для веб-платформы (браузер управляет этим автоматически)
+          if (kIsWeb) {
+            options.headers.remove('Accept-Encoding');
+            options.headers.remove('accept-encoding'); // На случай разного регистра
+          }
+          
+          final dioClient = dio ?? Dio(BaseOptions(
+            connectTimeout: Duration(seconds: timeoutSeconds),
+            receiveTimeout: Duration(seconds: timeoutSeconds),
+          ));
           
           final response = await dioClient.fetch(options);
           handler.resolve(response);

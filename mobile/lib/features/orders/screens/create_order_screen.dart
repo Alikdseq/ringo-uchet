@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/order_models.dart';
@@ -6,6 +7,7 @@ import '../services/order_service.dart';
 import '../widgets/nomenclature_selection_dialog.dart';
 import '../../catalog/services/client_service.dart';
 import '../../auth/services/user_service.dart';
+import '../../auth/providers/auth_providers.dart';
 import '../../../shared/models/user.dart';
 
 /// Экран создания заявки
@@ -39,15 +41,192 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
   final List<OrderItem> _selectedItems = [];
   final TextEditingController _totalAmountController = TextEditingController();
   bool _approveOnCreate = false;  // Флаг для одобрения при создании
+  
+  // Черновик
+  String? _draftOrderId;  // ID текущего черновика
+  bool _isSavingDraft = false;  // Флаг для отслеживания сохранения черновика
+  bool _hasUnsavedChanges = false;  // Флаг для отслеживания несохраненных изменений
 
   @override
   void initState() {
     super.initState();
     _loadOperators();
+    _checkForDraft();
+    // КРИТИЧНО: НЕ добавляем слушатели для автосохранения
+    // Сохранение происходит только при выходе или создании заявки
+    // Это предотвращает мерцание и перезагрузки во время редактирования
+  }
+  
+  /// Метод для пометки изменений БЕЗ автосохранения
+  /// Изменения сохраняются только при выходе или создании заявки
+  void _markAsChanged() {
+    if (!mounted) return;
+    // Просто помечаем что есть несохраненные изменения
+    // БЕЗ автосохранения - это предотвращает мерцание
+    _hasUnsavedChanges = true;
+  }
+  
+  /// Проверка наличия черновика для текущего пользователя
+  Future<void> _checkForDraft() async {
+    try {
+      final authState = ref.read(authStateProvider);
+      final user = authState.user;
+      
+      // Черновики только для админов
+      if (user?.role != 'admin') return;
+      
+      final orderService = ref.read(orderServiceProvider);
+      // Получаем список заявок со статусом DRAFT
+      final draftOrders = await orderService.getOrders(status: OrderStatus.draft, useCache: false);
+      
+      // Берем самую последнюю черновик (последняя созданная)
+      if (draftOrders.isNotEmpty) {
+        final draft = draftOrders.first; // Первая в списке (сортировка по -created_at)
+        // Проверяем что это черновик текущего пользователя (created_by)
+        if (draft.createdBy?.id == user?.id) {
+          // Загружаем данные черновика в форму
+          _loadDraftIntoForm(draft);
+          setState(() {
+            _draftOrderId = draft.id;
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('Ошибка при проверке черновика: $e');
+      // Игнорируем ошибки при проверке черновика
+    }
+  }
+  
+  /// Загрузка данных черновика в форму
+  void _loadDraftIntoForm(Order draft) {
+    if (draft.client != null) {
+      _clientNameController.text = draft.client!.name;
+      _clientPhoneController.text = draft.client!.phone;
+    }
+    _addressController.text = draft.address;
+    _descriptionController.text = draft.description;
+    _startDt = draft.startDt;
+    if (draft.totalAmount > 0) {
+      _totalAmountController.text = draft.totalAmount.toStringAsFixed(2);
+    }
+    if (draft.operatorIds != null && draft.operatorIds!.isNotEmpty) {
+      _selectedOperatorIds = draft.operatorIds!.toSet();
+    }
+    if (draft.items != null && draft.items!.isNotEmpty) {
+      _selectedItems.clear();
+      _selectedItems.addAll(draft.items!);
+    }
+    _hasUnsavedChanges = false; // Данные загружены, изменений нет
+  }
+  
+  /// Автосохранение черновика
+  Future<void> _saveDraft() async {
+    if (!mounted || _isSavingDraft || !_hasUnsavedChanges) return;
+    
+    // Проверяем что есть хотя бы минимальные данные для сохранения
+    if (_clientNameController.text.trim().isEmpty && 
+        _clientPhoneController.text.trim().isEmpty &&
+        _addressController.text.trim().isEmpty) {
+      return; // Не сохраняем пустой черновик
+    }
+    
+    // Черновики только для админов
+    final authState = ref.read(authStateProvider);
+    final user = authState.user;
+    if (user == null || user.role != 'admin') return;
+    
+    // Устанавливаем флаг без setState (автосохранение происходит в фоне, без визуальной индикации)
+    _isSavingDraft = true;
+    
+    try {
+      final orderService = ref.read(orderServiceProvider);
+      
+      // Если нет даты начала, используем текущую дату
+      final startDt = _startDt ?? DateTime.now();
+      
+      // Формируем запрос для черновика
+      final request = OrderRequest(
+        address: _addressController.text.trim().isNotEmpty 
+            ? _addressController.text.trim() 
+            : 'Временный адрес', // Минимальный адрес для черновика
+        startDt: startDt,
+        description: _descriptionController.text.trim(),
+        status: OrderStatus.draft, // Сохраняем как черновик
+        operatorIds: _selectedOperatorIds.isNotEmpty ? _selectedOperatorIds.toList() : null,
+        items: _selectedItems.isNotEmpty ? _selectedItems : null,
+        totalAmount: _totalAmountController.text.isNotEmpty 
+            ? double.tryParse(_totalAmountController.text.trim()) 
+            : null,
+      );
+      
+      Order savedOrder;
+      if (_draftOrderId != null) {
+        // Обновляем существующий черновик
+        savedOrder = await orderService.updateOrder(_draftOrderId!, request);
+      } else {
+        // Создаем новый черновик (но без клиента, если его еще нет)
+        // Для черновика можно создать временного клиента или сохранить без него
+        // Но в модели Order client_id может быть null, так что создаем заявку без клиента
+        // Нужно создать временного клиента для черновика
+        try {
+          final clientService = ref.read(clientServiceProvider);
+          final clientData = await clientService.createClient(
+            name: _clientNameController.text.trim().isNotEmpty 
+                ? _clientNameController.text.trim() 
+                : 'Временный клиент',
+            phone: _clientPhoneController.text.trim().isNotEmpty 
+                ? _clientPhoneController.text.trim() 
+                : '+79999999999',
+            address: _addressController.text.trim().isNotEmpty 
+                ? _addressController.text.trim() 
+                : 'Временный адрес',
+          );
+          
+          final clientId = clientData['id'];
+          if (clientId != null) {
+            final requestWithClient = OrderRequest(
+              clientId: clientId is int ? clientId : int.parse(clientId.toString()),
+              address: _addressController.text.trim().isNotEmpty 
+                  ? _addressController.text.trim() 
+                  : 'Временный адрес',
+              startDt: startDt,
+              description: _descriptionController.text.trim(),
+              status: OrderStatus.draft,
+              operatorIds: _selectedOperatorIds.isNotEmpty ? _selectedOperatorIds.toList() : null,
+              items: _selectedItems.isNotEmpty ? _selectedItems : null,
+              totalAmount: _totalAmountController.text.isNotEmpty 
+                  ? double.tryParse(_totalAmountController.text.trim()) 
+                  : null,
+            );
+            savedOrder = await orderService.createOrder(requestWithClient);
+          } else {
+            return; // Не удалось создать клиента, пропускаем сохранение
+          }
+        } catch (e) {
+          debugPrint('Ошибка при создании клиента для черновика: $e');
+          return; // Пропускаем сохранение если не удалось создать клиента
+        }
+      }
+      
+      // Обновляем данные без setState (не требует перерисовки UI)
+      _draftOrderId = savedOrder.id;
+      _hasUnsavedChanges = false;
+      
+      debugPrint('Черновик сохранен: ${savedOrder.id}');
+    } catch (e) {
+      debugPrint('Ошибка при сохранении черновика: $e');
+      // Не показываем ошибку пользователю, просто логируем
+    } finally {
+      // Сбрасываем флаг без setState
+      _isSavingDraft = false;
+    }
   }
 
   @override
   void dispose() {
+    // КРИТИЧНО: Сохранение черновика происходит в WillPopScope при выходе
+    // НЕ сохраняем автоматически при dispose - это предотвращает лишние запросы
+    
     _scrollController.dispose();
     _clientNameController.dispose();
     _clientPhoneController.dispose();
@@ -84,17 +263,33 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Создание заявки'),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () {
-            // Возвращаемся на главный экран
-            Navigator.of(context).popUntil((route) => route.isFirst);
-          },
+    return WillPopScope(
+      onWillPop: () async {
+        // КРИТИЧНО: Сохраняем черновик при выходе если есть несохраненные изменения
+        // Это единственное место где происходит сохранение (кроме создания заявки)
+        if (_hasUnsavedChanges && !_isSavingDraft) {
+          await _saveDraft();
+        }
+        return true; // Разрешаем выход
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Создание заявки'),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () async {
+              // КРИТИЧНО: Сохраняем черновик при выходе если есть несохраненные изменения
+              // Это единственное место где происходит сохранение (кроме создания заявки)
+              if (_hasUnsavedChanges && !_isSavingDraft) {
+                await _saveDraft();
+              }
+              // Возвращаемся на главный экран
+              if (mounted) {
+                Navigator.of(context).popUntil((route) => route.isFirst);
+              }
+            },
+          ),
         ),
-      ),
       body: Form(
         key: _formKey,
         child: ListView(
@@ -196,22 +391,24 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
                         subtitle: operator.phone != null ? Text(operator.phone!) : null,
                         value: isSelected,
                         onChanged: (value) {
-                          setState(() {
-                            if (value == true) {
-                              _selectedOperatorIds.add(operator.id);
-                            } else {
-                              _selectedOperatorIds.remove(operator.id);
-                            }
-                            // Для обратной совместимости устанавливаем первого выбранного
-                            if (_selectedOperatorIds.isNotEmpty) {
-                              _selectedOperator = _operators.firstWhere(
-                                (op) => op.id == _selectedOperatorIds.first,
-                              );
-                            } else {
-                              _selectedOperator = null;
-                            }
-                            _manualOperatorId = null;
-                          });
+                            setState(() {
+                              if (value == true) {
+                                _selectedOperatorIds.add(operator.id);
+                              } else {
+                                _selectedOperatorIds.remove(operator.id);
+                              }
+                              // Для обратной совместимости устанавливаем первого выбранного
+                              if (_selectedOperatorIds.isNotEmpty) {
+                                _selectedOperator = _operators.firstWhere(
+                                  (op) => op.id == _selectedOperatorIds.first,
+                                );
+                              } else {
+                                _selectedOperator = null;
+                              }
+                              _manualOperatorId = null;
+                            });
+                            // Пометка изменений после setState (без дополнительной перерисовки)
+                            _markAsChanged();
                         },
                       );
                     }).toList(),
@@ -249,6 +446,8 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
                         _manualOperatorId = ids.isNotEmpty ? ids.first : null;
                         _selectedOperator = null;
                       });
+                      // Пометка изменений после setState (без дополнительной перерисовки)
+                      _markAsChanged();
                     },
                   ),
                   if (_operators.isEmpty)
@@ -321,6 +520,8 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
                 setState(() {
                   _approveOnCreate = value ?? false;
                 });
+                // Пометка изменений после setState (без дополнительной перерисовки)
+                _markAsChanged();
               },
               controlAffinity: ListTileControlAffinity.leading,
             ),
@@ -357,6 +558,8 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
                         time.minute,
                       );
                     });
+                    // Пометка изменений после setState (без дополнительной перерисовки)
+                    _markAsChanged();
                   }
                 }
               },
@@ -382,6 +585,7 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
             const SizedBox(height: 16),
           ],
         ),
+      ),
       ),
     );
   }
@@ -440,9 +644,11 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
                 trailing: IconButton(
                   icon: const Icon(Icons.delete, color: Colors.red),
                   onPressed: () {
-                    setState(() {
-                      _selectedItems.removeAt(index);
-                    });
+                      setState(() {
+                        _selectedItems.removeAt(index);
+                      });
+                      // Пометка изменений после setState (без дополнительной перерисовки)
+                      _markAsChanged();
                   },
                 ),
               );
@@ -462,6 +668,8 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
       setState(() {
         _selectedItems.addAll(result);
       });
+      // Пометка изменений после setState (без дополнительной перерисовки)
+      _markAsChanged();
     }
   }
 
@@ -482,64 +690,129 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
     });
 
     try {
-      // Сначала создаем клиента
-      final clientService = ref.read(clientServiceProvider);
-      final clientData = await clientService.createClient(
-        name: _clientNameController.text.trim(),
-        phone: _clientPhoneController.text.trim(),
-        address: _addressController.text.trim(),
-      );
-
-      // Затем создаем заявку
       final orderService = ref.read(orderServiceProvider);
-
-      final clientId = clientData['id'];
-      if (clientId == null) {
-        throw Exception('Не удалось получить ID созданного клиента');
-      }
-
-      // Определяем ID оператора: из выбранного списка или из ручного ввода
-      // Формируем список ID операторов
-      final operatorIds = _selectedOperatorIds.isNotEmpty
-          ? _selectedOperatorIds.toList()
-          : (_selectedOperator != null
-              ? [_selectedOperator!.id]
-              : (_manualOperatorId != null
-                  ? [_manualOperatorId!]
-                  : null));
-
-      // Определяем статус: одобрен если выбрано, иначе создан
-      final orderStatus = _approveOnCreate ? OrderStatus.approved : OrderStatus.created;
       
-      // Получаем примерную стоимость если указана
-      double? totalAmount;
-      if (_totalAmountController.text.isNotEmpty) {
-        totalAmount = double.tryParse(_totalAmountController.text.trim());
-      }
-      
-      final request = OrderRequest(
-        clientId: clientId is int ? clientId : int.parse(clientId.toString()),
-        address: _addressController.text.trim(),
-        startDt: _startDt!,
-        endDt: null, // Дата окончания не устанавливается при создании
-        description: _descriptionController.text.trim().isEmpty 
-            ? '' 
-            : _descriptionController.text.trim(),
-        status: orderStatus, // Создаем со статусом "Создан" или "Одобрен"
-        operatorId: operatorIds?.isNotEmpty == true ? operatorIds!.first : null, // Для обратной совместимости
-        operatorIds: operatorIds, // Список ID операторов
-        items: _selectedItems.isNotEmpty ? _selectedItems : null, // Добавляем номенклатуру если выбрана
-        totalAmount: totalAmount, // Примерная стоимость
-      );
+      // Если есть черновик - обновляем его, иначе создаем новую заявку
+      if (_draftOrderId != null) {
+        // Обновляем существующий черновик, меняя статус на CREATED или APPROVED
+        // Сначала обновляем клиента если нужно
+        final clientService = ref.read(clientServiceProvider);
+        
+        // Получаем текущий черновик чтобы узнать ID клиента
+        final currentDraft = await orderService.getOrder(_draftOrderId!);
+        int? clientId = currentDraft.clientId;
+        
+        // Если данных клиента нет или они изменились, обновляем клиента
+        if (clientId == null || 
+            currentDraft.client?.name != _clientNameController.text.trim() ||
+            currentDraft.client?.phone != _clientPhoneController.text.trim()) {
+          // Создаем/обновляем клиента
+          final clientData = await clientService.createClient(
+            name: _clientNameController.text.trim(),
+            phone: _clientPhoneController.text.trim(),
+            address: _addressController.text.trim(),
+          );
+          clientId = clientData['id'] is int ? clientData['id'] : int.parse(clientData['id'].toString());
+        }
 
-      final createdOrder = await orderService.createOrder(request);
+        // Определяем ID оператора: из выбранного списка или из ручного ввода
+        final operatorIds = _selectedOperatorIds.isNotEmpty
+            ? _selectedOperatorIds.toList()
+            : (_selectedOperator != null
+                ? [_selectedOperator!.id]
+                : (_manualOperatorId != null
+                    ? [_manualOperatorId!]
+                    : null));
 
-      if (mounted) {
-        // Возвращаем созданную заявку для немедленного обновления списка
-        Navigator.pop(context, createdOrder);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Заявка создана')),
+        // Определяем статус: одобрен если выбрано, иначе создан
+        final orderStatus = _approveOnCreate ? OrderStatus.approved : OrderStatus.created;
+        
+        // Получаем примерную стоимость если указана
+        double? totalAmount;
+        if (_totalAmountController.text.isNotEmpty) {
+          totalAmount = double.tryParse(_totalAmountController.text.trim());
+        }
+        
+        final request = OrderRequest(
+          clientId: clientId,
+          address: _addressController.text.trim(),
+          startDt: _startDt!,
+          endDt: null,
+          description: _descriptionController.text.trim().isEmpty 
+              ? '' 
+              : _descriptionController.text.trim(),
+          status: orderStatus, // Меняем статус с DRAFT на CREATED или APPROVED
+          operatorId: operatorIds?.isNotEmpty == true ? operatorIds!.first : null,
+          operatorIds: operatorIds,
+          items: _selectedItems.isNotEmpty ? _selectedItems : null,
+          totalAmount: totalAmount,
         );
+
+        final updatedOrder = await orderService.updateOrder(_draftOrderId!, request);
+
+        if (mounted) {
+          // Возвращаем обновленную заявку для немедленного обновления списка
+          Navigator.pop(context, updatedOrder);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Заявка создана')),
+          );
+        }
+      } else {
+        // Создаем новую заявку (как раньше)
+        // Сначала создаем клиента
+        final clientService = ref.read(clientServiceProvider);
+        final clientData = await clientService.createClient(
+          name: _clientNameController.text.trim(),
+          phone: _clientPhoneController.text.trim(),
+          address: _addressController.text.trim(),
+        );
+
+        final clientId = clientData['id'];
+        if (clientId == null) {
+          throw Exception('Не удалось получить ID созданного клиента');
+        }
+
+        // Определяем ID оператора: из выбранного списка или из ручного ввода
+        final operatorIds = _selectedOperatorIds.isNotEmpty
+            ? _selectedOperatorIds.toList()
+            : (_selectedOperator != null
+                ? [_selectedOperator!.id]
+                : (_manualOperatorId != null
+                    ? [_manualOperatorId!]
+                    : null));
+
+        // Определяем статус: одобрен если выбрано, иначе создан
+        final orderStatus = _approveOnCreate ? OrderStatus.approved : OrderStatus.created;
+        
+        // Получаем примерную стоимость если указана
+        double? totalAmount;
+        if (_totalAmountController.text.isNotEmpty) {
+          totalAmount = double.tryParse(_totalAmountController.text.trim());
+        }
+        
+        final request = OrderRequest(
+          clientId: clientId is int ? clientId : int.parse(clientId.toString()),
+          address: _addressController.text.trim(),
+          startDt: _startDt!,
+          endDt: null,
+          description: _descriptionController.text.trim().isEmpty 
+              ? '' 
+              : _descriptionController.text.trim(),
+          status: orderStatus,
+          operatorId: operatorIds?.isNotEmpty == true ? operatorIds!.first : null,
+          operatorIds: operatorIds,
+          items: _selectedItems.isNotEmpty ? _selectedItems : null,
+          totalAmount: totalAmount,
+        );
+
+        final createdOrder = await orderService.createOrder(request);
+
+        if (mounted) {
+          Navigator.pop(context, createdOrder);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Заявка создана')),
+          );
+        }
       }
     } catch (e) {
       if (mounted) {

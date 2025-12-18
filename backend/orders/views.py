@@ -25,6 +25,7 @@ from .models import Order, OrderItem, OrderStatus, OrderStatusLog, PhotoEvidence
 from .serializers import (
     OrderAttachmentSerializer,
     OrderCompleteSerializer,
+    OperatorSalariesUpdateSerializer,
     OrderPricePreviewSerializer,
     OrderSerializer,
     OrderStatusLogSerializer,
@@ -538,6 +539,25 @@ class OrderViewSet(viewsets.ModelViewSet):
                 {"detail": f"Ошибка при сериализации заявки: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+    @extend_schema(
+        summary="Обновить зарплаты операторов по заявке",
+        description="Создать или обновить записи зарплаты операторов для существующей заявки. Требуется роль Manager/Admin.",
+        request=OperatorSalariesUpdateSerializer,
+        responses={
+            200: {"description": "Зарплаты обновлены"},
+            400: {"description": "Ошибка валидации"},
+        },
+        tags=["Orders", "Finance"],
+    )
+    @action(detail=True, methods=["post"], url_path="salaries")
+    def update_salaries(self, request, pk=None):
+        """Позволяет обновить зарплаты операторов для заявки (в том числе уже завершённой)."""
+        order = self.get_object()
+        serializer = OperatorSalariesUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self._create_financial_records(order, serializer.validated_data, request.user)
+        return Response({"detail": "Salaries updated"}, status=status.HTTP_200_OK)
     
     @extend_schema(
         summary="Получить чек",
@@ -684,7 +704,7 @@ class OrderViewSet(viewsets.ModelViewSet):
         return self.request.META.get("REMOTE_ADDR")
 
     def _create_financial_records(self, order: Order, validated_data: dict[str, Any], user) -> None:
-        """Создает финансовые записи (расходы и зарплату) при завершении заявки"""
+        """Создает или обновляет финансовые записи (расходы и зарплату) для заявки."""
         from decimal import Decimal
         from django.db import transaction
         from users.models import User
@@ -696,7 +716,7 @@ class OrderViewSet(viewsets.ModelViewSet):
                 delta = order.end_dt - order.start_dt
                 hours_worked = Decimal(str(delta.total_seconds() / 3600))
             
-            # Создаем записи зарплаты для каждого оператора из operator_salaries
+            # Создаем или обновляем записи зарплаты для каждого оператора из operator_salaries
             operator_salaries = validated_data.get("operator_salaries", [])
             if operator_salaries:
                 for op_salary_data in operator_salaries:
@@ -706,7 +726,7 @@ class OrderViewSet(viewsets.ModelViewSet):
                     if operator_id and salary_amount > 0:
                         try:
                             operator = User.objects.get(id=operator_id)
-                            SalaryRecord.objects.get_or_create(
+                            SalaryRecord.objects.update_or_create(
                                 order=order,
                                 user=operator,
                                 defaults={
@@ -733,7 +753,7 @@ class OrderViewSet(viewsets.ModelViewSet):
                     operator = order.operator
                 
                 if operator:
-                    SalaryRecord.objects.get_or_create(
+                    SalaryRecord.objects.update_or_create(
                         order=order,
                         user=operator,
                         defaults={

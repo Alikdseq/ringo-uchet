@@ -53,8 +53,8 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
   List<UserInfo> _operators = [];
   bool _isLoadingOperators = false;
   
-  // Debounce таймер для автосохранения цены
-  Timer? _saveDebounceTimer;
+  // КРИТИЧНО: Убрали автосохранение - сохраняем только при явном действии пользователя
+  // Это предотвращает мерцание и перезагрузки во время редактирования
 
   @override
   void initState() {
@@ -65,7 +65,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
   
   @override
   void dispose() {
-    _saveDebounceTimer?.cancel();
+    // КРИТИЧНО: Убрали автосохранение - не нужно отменять таймеры
     _totalAmountController.dispose();
     _addressController.dispose();
     _descriptionController.dispose();
@@ -574,25 +574,12 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                     keyboardType: TextInputType.numberWithOptions(decimal: true),
                     inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}'))],
                     enabled: !_isSaving,
+                    // КРИТИЧНО: Убрали автосохранение при изменении
+                    // Сохранение происходит только при явном действии (кнопка сохранить, переход на следующий этап)
+                    // Это предотвращает мерцание и перезагрузки во время редактирования
                     onChanged: (value) {
-                      // Отменяем предыдущий таймер
-                      _saveDebounceTimer?.cancel();
-                      // Устанавливаем новый таймер на 5 секунд
-                      _saveDebounceTimer = Timer(const Duration(seconds: 5), () {
-                        if (mounted && _totalAmountController.text == value) {
-                          _saveChanges();
-                        }
-                      });
-                    },
-                    onEditingComplete: () {
-                      // Сохраняем при потере фокуса (Enter или Tab)
-                      _saveDebounceTimer?.cancel();
-                      _saveChanges();
-                    },
-                    onSubmitted: (_) {
-                      // Сохраняем при нажатии Enter
-                      _saveDebounceTimer?.cancel();
-                      _saveChanges();
+                      // Просто обновляем значение БЕЗ сохранения
+                      // Пользователь может редактировать сколько угодно без мерцаний
                     },
                   ),
                 )
@@ -781,13 +768,12 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
               ),
               maxLines: 4,
               enabled: !_isSaving,
+              // КРИТИЧНО: Убрали автосохранение при изменении
+              // Сохранение происходит только при явном действии (кнопка сохранить, переход на следующий этап)
+              // Это предотвращает мерцание и перезагрузки во время редактирования
               onChanged: (value) {
-                // Автосохранение при изменении
-                Future.delayed(const Duration(milliseconds: 500), () {
-                  if (mounted && _descriptionController.text == value) {
-                    _saveChanges();
-                  }
-                });
+                // Просто обновляем значение БЕЗ сохранения
+                // Пользователь может редактировать сколько угодно без мерцаний
               },
             )
           else
@@ -855,7 +841,9 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                             _selectedOperatorIds.remove(operator.id);
                           });
                         }
-                        _saveChanges();
+                        // КРИТИЧНО: Убрали автосохранение при изменении операторов
+                        // Сохранение происходит только при явном действии (кнопка сохранить, переход на следующий этап)
+                        // Это предотвращает мерцание и перезагрузки во время редактирования
                       },
                     );
                   }).toList(),
@@ -931,8 +919,9 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
         });
       }
       
-      // Перезагружаем заявку для получения актуальных данных
-      await _loadOrder();
+      // КРИТИЧНО: НЕ перезагружаем заявку - обновляем только локальное состояние
+      // Это предотвращает мерцание и перезагрузку UI
+      // Данные уже обновлены в setState выше
       
       // КРИТИЧНО: Если заявка завершена, обновляем отчеты немедленно
       // Это обеспечивает моментальное отображение изменений в отчетах
@@ -946,6 +935,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
             content: Text(_editableItems.isEmpty 
               ? 'Номенклатура удалена, стоимость обновлена'
               : 'Номенклатура обновлена, стоимость пересчитана'),
+            duration: const Duration(seconds: 2),
           ),
         );
       }
@@ -1039,8 +1029,9 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
         });
       }
       
-      // Перезагружаем заявку для получения актуальных данных
-      await _loadOrder();
+      // КРИТИЧНО: НЕ перезагружаем заявку - обновляем только локальное состояние
+      // Это предотвращает мерцание и перезагрузку UI
+      // Данные уже обновлены в setState выше
       
       // КРИТИЧНО: Если заявка завершена, обновляем отчеты немедленно
       // Это обеспечивает моментальное отображение изменений в отчетах
@@ -1048,9 +1039,14 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
         ref.read(reportsRefreshProvider.notifier).state++;
       }
       
+      // КРИТИЧНО: Показываем уведомление только при явном сохранении (не при автосохранении)
+      // Уведомление показывается только если это было явное действие пользователя
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Изменения сохранены')),
+          const SnackBar(
+            content: Text('Изменения сохранены'),
+            duration: Duration(seconds: 2),
+          ),
         );
       }
     } catch (e) {
@@ -1062,8 +1058,8 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
             duration: const Duration(seconds: 5),
           ),
         );
-        // Перезагружаем заявку даже при ошибке, чтобы показать актуальное состояние
-        await _loadOrder();
+        // КРИТИЧНО: НЕ перезагружаем заявку даже при ошибке
+        // Это предотвращает мерцание - пользователь видит что было до ошибки
       }
     } finally {
       if (mounted) {

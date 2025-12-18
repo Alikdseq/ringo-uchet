@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../storage/secure_storage.dart';
 import '../../../features/auth/providers/auth_providers.dart';
+import '../dio_client.dart';
 
 /// Interceptor для добавления JWT токена в заголовки и автоматического обновления
 class AuthInterceptor extends Interceptor {
@@ -18,6 +20,13 @@ class AuthInterceptor extends Interceptor {
     if (options.path.contains('/token/') || options.path.contains('/auth/')) {
       handler.next(options);
       return;
+    }
+
+    // Удаляем Accept-Encoding для веб-платформы (браузер управляет этим автоматически)
+    // WebHeaderInterceptor должен был уже удалить его, но на всякий случай удаляем здесь тоже
+    if (kIsWeb) {
+      options.headers.remove('Accept-Encoding');
+      options.headers.remove('accept-encoding'); // На случай разного регистра
     }
 
     final storage = ref.read(secureStorageProvider);
@@ -68,18 +77,43 @@ class AuthInterceptor extends Interceptor {
           // Обновляем токен в запросе
           final storage = ref.read(secureStorageProvider);
           final newToken = await storage.getAccessToken();
+          
+          if (newToken == null) {
+            // Если токен не получен, отклоняем запросы
+            for (final pending in _pendingRequests) {
+              pending.completer.completeError(err);
+            }
+            _pendingRequests.clear();
+            handler.next(err);
+            return;
+          }
+          
           err.requestOptions.headers['Authorization'] = 'Bearer $newToken';
+          
+          // Удаляем Accept-Encoding для веб-платформы (браузер управляет этим автоматически)
+          if (kIsWeb) {
+            err.requestOptions.headers.remove('Accept-Encoding');
+            err.requestOptions.headers.remove('accept-encoding'); // На случай разного регистра
+          }
 
           // Повторяем оригинальный запрос
           try {
-            final dio = Dio();
-            final response = await dio.fetch(err.requestOptions);
+            // Используем тот же Dio клиент из провайдера (уже настроен с WebHeaderInterceptor)
+            // Или создаем новый с правильными настройками для веб
+            final dioClient = ref.read(dioClientProvider);
+            final response = await dioClient.fetch(err.requestOptions);
             
             // Разрешаем все ожидающие запросы
             for (final pending in _pendingRequests) {
               pending.requestOptions.headers['Authorization'] = 'Bearer $newToken';
+              
+              // Удаляем Accept-Encoding для веб-платформы (браузер управляет этим автоматически)
+              if (kIsWeb) {
+                pending.requestOptions.headers.remove('Accept-Encoding');
+                pending.requestOptions.headers.remove('accept-encoding'); // На случай разного регистра
+              }
               try {
-                final pendingResponse = await dio.fetch(pending.requestOptions);
+                final pendingResponse = await dioClient.fetch(pending.requestOptions);
                 pending.completer.complete(pendingResponse);
               } catch (e) {
                 pending.completer.completeError(e);
@@ -95,13 +129,81 @@ class AuthInterceptor extends Interceptor {
               pending.completer.completeError(e);
             }
             _pendingRequests.clear();
+            handler.next(err);
+            return;
           }
         } else {
-          // Если refresh не удался, отклоняем все ожидающие запросы
+          // Если refresh не удался (refresh token недействителен)
+          // Пытаемся автоматический перелогин с сохраненными credentials
+          try {
+            final autoLoginSuccess = await authNotifier.attemptAutoLogin();
+            
+            if (autoLoginSuccess) {
+              // Автоматический перелогин успешен - получаем новый токен
+              final storage = ref.read(secureStorageProvider);
+              final newToken = await storage.getAccessToken();
+              
+              if (newToken != null) {
+                // Обновляем токен в оригинальном запросе
+                err.requestOptions.headers['Authorization'] = 'Bearer $newToken';
+                
+                // Удаляем Accept-Encoding для веб-платформы
+                if (kIsWeb) {
+                  err.requestOptions.headers.remove('Accept-Encoding');
+                  err.requestOptions.headers.remove('accept-encoding');
+                }
+
+                // Повторяем оригинальный запрос
+                try {
+                  final dioClient = ref.read(dioClientProvider);
+                  final response = await dioClient.fetch(err.requestOptions);
+                  
+                  // Разрешаем все ожидающие запросы с новым токеном
+                  for (final pending in _pendingRequests) {
+                    pending.requestOptions.headers['Authorization'] = 'Bearer $newToken';
+                    
+                    if (kIsWeb) {
+                      pending.requestOptions.headers.remove('Accept-Encoding');
+                      pending.requestOptions.headers.remove('accept-encoding');
+                    }
+                    
+                    try {
+                      final pendingResponse = await dioClient.fetch(pending.requestOptions);
+                      pending.completer.complete(pendingResponse);
+                    } catch (e) {
+                      pending.completer.completeError(e);
+                    }
+                  }
+                  _pendingRequests.clear();
+
+                  handler.resolve(response);
+                  return;
+                } catch (e) {
+                  // Если повторный запрос не удался, отклоняем все ожидающие
+                  for (final pending in _pendingRequests) {
+                    pending.completer.completeError(e);
+                  }
+                  _pendingRequests.clear();
+                  handler.next(err);
+                  return;
+                }
+              }
+            }
+          } catch (e) {
+            // Автоматический перелогин не удался - продолжаем с ошибкой
+            debugPrint('Auto-login in interceptor failed: $e');
+          }
+          
+          // Если автоматический перелогин не удался или токен не получен
+          // Отклоняем все ожидающие запросы
           for (final pending in _pendingRequests) {
             pending.completer.completeError(err);
           }
           _pendingRequests.clear();
+          
+          // Пропускаем ошибку дальше - она будет обработана на уровне приложения
+          handler.next(err);
+          return;
         }
       } catch (e) {
         // Отклоняем все ожидающие запросы

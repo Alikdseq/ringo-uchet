@@ -1,0 +1,63 @@
+@import "tailwindcss";
+
+:root {
+  /* Базовые цвета приложения */
+  --background: #f3f4f6; /* мягкий серый фон */
+  --foreground: #111827; /* тёмный строгий текст */
+
+  /* Брендовые оттенки (cold blue) */
+  --primary-50: #eff6ff;
+  --primary-100: #dbeafe;
+  --primary-200: #bfdbfe;
+  --primary-500: #2563eb;
+  --primary-600: #1d4ed8;
+  --primary-900: #0b1f3b;
+
+  /* Цвета статусов заказов (повторяют Flutter StatusColors) */
+  --status-draft: #9e9e9e;
+  --status-created: #2196f3;
+  --status-approved: #ff9800;
+  --status-in-progress: #00bcd4;
+  --status-completed: #4caf50;
+  --status-cancelled: #f44336;
+  --status-deleted: #616161;
+}
+
+@theme inline {
+  /* Базовые токены Tailwind */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+
+  /* Брендовые цвета как Tailwind-токены */
+  --color-primary-50: var(--primary-50);
+  --color-primary-100: var(--primary-100);
+  --color-primary-200: var(--primary-200);
+  --color-primary-500: var(--primary-500);
+  --color-primary-600: var(--primary-600);
+  --color-primary-900: var(--primary-900);
+
+  /* Tailwind-токены для статусов заказов */
+  --color-status-draft: var(--status-draft);
+  --color-status-created: var(--status-created);
+  --color-status-approved: var(--status-approved);
+  --color-status-in-progress: var(--status-in-progress);
+  --color-status-completed: var(--status-completed);
+  --color-status-cancelled: var(--status-cancelled);
+  --color-status-deleted: var(--status-deleted);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #020617;
+    --foreground: #e2e8f0;
+  }
+}
+
+body {
+  background: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-geist-sans), system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+}

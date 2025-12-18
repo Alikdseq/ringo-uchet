@@ -96,24 +96,40 @@ def summary_report(date_from: Optional[str], date_to: Optional[str]) -> dict:
     # Получаем материалы с категориями грунт и инструменты
     material_items = OrderItem.objects.filter(
         order__in=orders,
-        item_type=OrderItem.ItemType.MATERIAL
+        item_type=OrderItem.ItemType.MATERIAL,
     )
     
     # Фильтруем материалы: только грунт (SOIL) и инструменты (TOOL)
+    # Избегаем N+1 запросов к MaterialItem, заранее подтягивая все нужные записи.
     material_items_soil_tool = []
+    # Собираем ref_id для тех позиций, где категория не проставлена в metadata
+    ref_ids_to_resolve = {
+        item.ref_id
+        for item in material_items
+        if item.ref_id and not (item.metadata or {}).get("material_category")
+    }
+    material_map = {}
+    if ref_ids_to_resolve:
+        material_map = {
+            m.id: m
+            for m in MaterialItem.objects.filter(id__in=ref_ids_to_resolve)
+        }
+    
     for item in material_items:
         metadata = item.metadata or {}
         material_category = metadata.get("material_category")
-        # Если категория не указана в metadata, пытаемся получить из MaterialItem
+        # Если категория не указана в metadata, пытаемся получить из заранее загруженных MaterialItem
         if not material_category and item.ref_id:
-            try:
-                material = MaterialItem.objects.get(id=item.ref_id)
-                material_category = material.category
-            except MaterialItem.DoesNotExist:
+            material = material_map.get(item.ref_id)
+            if not material:
                 continue
+            material_category = material.category
         
         # Включаем только грунт и инструменты
-        if material_category in [MaterialItem.MaterialCategory.SOIL, MaterialItem.MaterialCategory.TOOL]:
+        if material_category in [
+            MaterialItem.MaterialCategory.SOIL,
+            MaterialItem.MaterialCategory.TOOL,
+        ]:
             material_items_soil_tool.append(item)
     
     # Объединяем услуги и материалы (грунт и инструменты) для расчета доходов
@@ -334,6 +350,16 @@ def equipment_report(date_from: Optional[str], date_to: Optional[str]) -> list[d
         equipment = equipment_map.get(eq_id)
         if not equipment:
             continue
+
+        total_expenses = expense_map.get(eq_id, Decimal("0")) or Decimal("0")
+        fuel_total = fuel_expense_map.get(eq_id, Decimal("0")) or Decimal("0")
+        repair_total = repair_expense_map.get(eq_id, Decimal("0")) or Decimal("0")
+
+        # В отчёте по технике показываем "выручку" как чистый результат:
+        # доходы по заявкам минус расходы на топливо и ремонт.
+        gross_revenue = data["revenue"]
+        net_revenue = gross_revenue - fuel_total - repair_total
+
         report.append(
             {
                 "equipment_id": eq_id,
@@ -341,10 +367,10 @@ def equipment_report(date_from: Optional[str], date_to: Optional[str]) -> list[d
                 "code": equipment.code,
                 "status": equipment.status,
                 "total_hours": str(data["total_hours"]),
-                "revenue": str(data["revenue"].quantize(Decimal("0.01"))),
-                "expenses": str(expense_map.get(eq_id, Decimal("0"))),
-                "fuel_expenses": str(fuel_expense_map.get(eq_id, Decimal("0"))),  # Расходы на топливо для данной техники
-                "repair_expenses": str(repair_expense_map.get(eq_id, Decimal("0"))),  # Расходы на ремонт для данной техники
+                "revenue": str(net_revenue.quantize(Decimal("0.01"))),
+                "expenses": str(total_expenses),
+                "fuel_expenses": str(fuel_total),  # Расходы на топливо для данной техники
+                "repair_expenses": str(repair_total),  # Расходы на ремонт для данной техники
             }
         )
     return report

@@ -12,9 +12,7 @@ import 'order_detail_screen.dart';
 
 /// Экран списка заявок
 class OrdersListScreen extends ConsumerStatefulWidget {
-  final int? refreshKey; // Ключ для принудительного обновления
-  
-  const OrdersListScreen({super.key, this.refreshKey});
+  const OrdersListScreen({super.key});
 
   @override
   ConsumerState<OrdersListScreen> createState() => _OrdersListScreenState();
@@ -73,17 +71,9 @@ class _OrdersListScreenState extends ConsumerState<OrdersListScreen> with Single
     }
   }
   
-  @override
-  void didUpdateWidget(OrdersListScreen oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    // Если изменился refreshKey, обновляем список
-    if (widget.refreshKey != null && widget.refreshKey != oldWidget.refreshKey) {
-      // СНАЧАЛА загружаем из кэша для мгновенного отображения новой заявки
-      _loadOrdersFromCache();
-      // Затем в фоне обновляем с сервера
-      _loadOrders(useCache: false);
-    }
-  }
+  // КРИТИЧНО: Убрали didUpdateWidget с refreshKey
+  // Теперь виджет не пересоздается, обновление происходит автоматически через кэш
+  // IndexedStack сохраняет состояние экрана, поэтому при возврате данные уже актуальны
 
   /// Мгновенная загрузка заявок из кэша (без индикатора загрузки)
   Future<void> _loadOrdersFromCache() async {
@@ -666,11 +656,37 @@ class _OrderCard extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    'Заказ ${order.number}',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
+                  Expanded(
+                    child: Row(
+                      children: [
+                        Text(
+                          'Заказ ${order.number}',
+                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.bold,
+                              ),
                         ),
+                        // Показываем маркер "Черновик" если статус DRAFT
+                        if (order.status == OrderStatus.draft) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.orange.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.orange),
+                            ),
+                            child: const Text(
+                              'Черновик',
+                              style: TextStyle(
+                                color: Colors.orange,
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),

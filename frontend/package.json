@@ -1,0 +1,45 @@
+{
+  "name": "frontend",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "prepare": "husky"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.90.12",
+    "axios": "^1.13.2",
+    "next": "16.0.10",
+    "react": "19.2.1",
+    "react-dom": "19.2.1",
+    "zustand": "^5.0.9"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@tanstack/react-query-devtools": "^5.91.1",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.2.0",
+    "@testing-library/user-event": "^14.6.1",
+    "eslint": "^9",
+    "eslint-config-next": "16.0.10",
+    "husky": "^9.1.7",
+    "prettier": "^3.7.4",
+    "tailwindcss": "^4",
+    "typescript": "^5",
+    "jsdom": "^26.0.0",
+    "vitest": "^3.0.4",
+    "@vitest/ui": "^3.0.4",
+    "@vitest/coverage-v8": "^3.0.4",
+    "@playwright/test": "^1.49.1"
+  }
+}

@@ -360,29 +360,30 @@ class OrderSerializer(serializers.ModelSerializer):
 
     def update(self, instance: Order, validated_data: dict[str, Any]) -> Order:
         try:
-            # Проверяем права: только админ может редактировать заявки на любом этапе
+            # Проверяем права: админ и менеджер могут редактировать заявки на любом этапе,
+            # остальные роли не могут менять завершённые заявки
             user = self.context["request"].user
-            logger.info(f"Updating order {instance.id}. User: {user.id}, Role: {user.role}, Current status: {instance.status}")
-            
-            if user.role != "admin" and not user.is_superuser:
-                # Для не-админов проверяем, что заявка не завершена и не удалена
+            logger.info(
+                f"Updating order {instance.id}. User: {user.id}, Role: {user.role}, Current status: {instance.status}"
+            )
+
+            if user.role not in ["admin", "manager"] and not user.is_superuser:
                 if instance.status == OrderStatus.COMPLETED:
                     from rest_framework.exceptions import PermissionDenied
-                    status_label = "завершенную" if instance.status == OrderStatus.COMPLETED else "удаленную"
+
                     error_msg = (
-                        f"Недостаточно прав для редактирования {status_label} заявку. "
-                        f"Текущий статус: {instance.status}. "
-                        f"Только администратор может редактировать завершенные или удаленные заявки."
+                        "Недостаточно прав для редактирования завершённой заявки. "
+                        "Только администратор или менеджер могут редактировать завершённые заявки."
                     )
                     logger.warning(f"Permission denied: {error_msg}")
                     raise PermissionDenied(error_msg)
             
             # Извлекаем many-to-many поля и другие специальные поля ДО setattr
+            # items_data:
+            #   None  - поле items не передавалось (не трогаем текущую номенклатуру)
+            #   []    - удалить все позиции и сохранить только примерную стоимость
+            #   [..]  - заменить текущие позиции переданным списком и пересчитать total_amount
             items_data = validated_data.pop("items", None)
-            # Если items_data - пустой список, считаем его как None (нет items для обновления)
-            if items_data is not None and len(items_data) == 0:
-                items_data = None
-                logger.info("Empty items list received in update, treating as None")
             
             total_amount = validated_data.pop("total_amount", None)
             operators = validated_data.pop("operators", None)  # Извлекаем operators (many-to-many)
@@ -651,6 +652,27 @@ class OrderCompleteSerializer(serializers.Serializer):
                 if not item.get("quantity") or Decimal(str(item.get("quantity", 0))) <= 0:
                     raise serializers.ValidationError("Для материала необходимо указать количество")
         return value
+
+
+class OperatorSalariesUpdateSerializer(serializers.Serializer):
+    """Упрощённый сериализатор для обновления зарплат операторов по заявке."""
+
+    operator_salary = serializers.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        required=False,
+        allow_null=True,
+        help_text="Зарплата оператору (устаревшее поле, поддерживается для совместимости)",
+    )
+    operator_salaries = OperatorSalarySerializer(
+        many=True,
+        required=False,
+        help_text="Список зарплат для каждого оператора",
+    )
+
+    def validate(self, attrs):
+        # Никакой дополнительной валидации не требуется, оставляем данные как есть.
+        return attrs
 
 
 class OrderAttachmentSerializer(serializers.Serializer):

@@ -438,114 +438,126 @@ class _HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<_HomeScreen> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
-  int _ordersRefreshKey = 0; // Ключ для принудительного обновления OrdersListScreen
+  
+  // КРИТИЧНО: Кэшируем виджеты экранов чтобы они не пересоздавались при каждой пересборке
+  // Это предотвращает мерцание при навигации
+  List<Widget> _cachedScreens = [];
+  List<String> _cachedTitles = [];
+  List<BottomNavigationBarItem> _cachedBottomNavItems = [];
+  int? _cachedUserRole; // Кэшируем роль пользователя для проверки изменений
+  bool _screensInitialized = false;
 
   @override
   void initState() {
     super.initState();
+    // Инициализируем кэшированные экраны сразу
+    _initializeCachedScreens();
   }
-
-
-  @override
-  Widget build(BuildContext context) {
-    // Оптимизация: используем watch только для authState (нужен для навигации)
-    // Остальные данные читаем через read для избежания лишних перерисовок
-    final authState = ref.watch(authStateProvider);
+  
+  void _initializeCachedScreens() {
+    if (_screensInitialized) return; // Предотвращаем повторную инициализацию
+    
+    final authState = ref.read(authStateProvider);
     final user = authState.user;
     final userRole = user?.role ?? 'user';
+    _cachedUserRole = userRole == 'admin' ? 1 : (userRole == 'operator' ? 2 : 0);
+    
     final isAdmin = userRole == 'admin';
     final isOperator = userRole == 'operator';
     
-    // Используем провайдер для управления индексом навигации
-    final currentIndex = ref.watch(navigationIndexProvider);
-    
-    // Определяем доступные вкладки в зависимости от роли
-    final availableIndices = <int>[];
-    final availableTitles = <String>[];
-    final availableScreens = <Widget>[];
-    final availableBottomNavItems = <BottomNavigationBarItem>[];
-    final availableDrawerItems = <Widget>[];
+    _cachedScreens.clear();
+    _cachedTitles.clear();
+    _cachedBottomNavItems.clear();
     
     // Главная - всегда доступна
-    availableIndices.add(0);
-    availableTitles.add('Главная');
-    availableScreens.add(ScreenWrapper(builder: (_) => const DashboardScreen()));
-    availableBottomNavItems.add(const BottomNavigationBarItem(
+    _cachedTitles.add('Главная');
+    _cachedScreens.add(ScreenWrapper(builder: (_) => const DashboardScreen()));
+    _cachedBottomNavItems.add(const BottomNavigationBarItem(
       icon: Icon(Icons.dashboard),
       label: 'Главная',
     ));
-    availableDrawerItems.add(_buildDrawerItem(context, icon: Icons.dashboard, title: 'Главная', index: 0));
     
     // Заявки - всегда доступны
-    availableIndices.add(1);
-    availableTitles.add('Заявки');
-    availableScreens.add(ScreenWrapper(
-      key: ValueKey('orders_list_$_ordersRefreshKey'),
-      builder: (_) => OrdersListScreen(
-        refreshKey: _ordersRefreshKey,
-      ),
+    // КРИТИЧНО: Не используем ValueKey - виджет не пересоздается, обновление через провайдер
+    _cachedTitles.add('Заявки');
+    _cachedScreens.add(ScreenWrapper(
+      builder: (_) => const OrdersListScreen(),
     ));
-    availableBottomNavItems.add(const BottomNavigationBarItem(
+    _cachedBottomNavItems.add(const BottomNavigationBarItem(
       icon: Icon(Icons.list_alt),
       label: 'Заявки',
     ));
-    availableDrawerItems.add(_buildDrawerItem(context, icon: Icons.list_alt, title: 'Заявки', index: 1));
     
     // Номенклатура - только для админа и менеджера
     if (!isOperator) {
-      availableIndices.add(2);
-      availableTitles.add('Номенклатура');
-      availableScreens.add(ScreenWrapper(builder: (_) => const CatalogScreen()));
-      availableBottomNavItems.add(const BottomNavigationBarItem(
+      _cachedTitles.add('Номенклатура');
+      _cachedScreens.add(ScreenWrapper(builder: (_) => const CatalogScreen()));
+      _cachedBottomNavItems.add(const BottomNavigationBarItem(
         icon: Icon(Icons.inventory),
         label: 'Номенклатура',
       ));
-      availableDrawerItems.add(_buildDrawerItem(context, icon: Icons.inventory, title: 'Номенклатура', index: 2));
     }
     
     // Отчёты - для админа, зарплаты для оператора
     if (isAdmin) {
-      availableIndices.add(3);
-      availableTitles.add('Отчёты');
-      availableScreens.add(ScreenWrapper(builder: (_) => const ReportsScreen()));
-      availableBottomNavItems.add(const BottomNavigationBarItem(
+      _cachedTitles.add('Отчёты');
+      _cachedScreens.add(ScreenWrapper(builder: (_) => const ReportsScreen()));
+      _cachedBottomNavItems.add(const BottomNavigationBarItem(
         icon: Icon(Icons.analytics),
         label: 'Отчёты',
       ));
-      availableDrawerItems.add(_buildDrawerItem(context, icon: Icons.analytics, title: 'Отчёты', index: 3));
     } else if (isOperator) {
-      // Для оператора показываем экран зарплат вместо отчетов
-      availableIndices.add(2);
-      availableTitles.add('Мои зарплаты');
-      availableScreens.add(ScreenWrapper(builder: (_) => const OperatorSalaryScreen()));
-      availableBottomNavItems.add(const BottomNavigationBarItem(
+      _cachedTitles.add('Мои зарплаты');
+      _cachedScreens.add(ScreenWrapper(builder: (_) => const OperatorSalaryScreen()));
+      _cachedBottomNavItems.add(const BottomNavigationBarItem(
         icon: Icon(Icons.payments),
         label: 'Зарплаты',
       ));
-      availableDrawerItems.add(_buildDrawerItem(context, icon: Icons.payments, title: 'Мои зарплаты', index: 2));
     }
     
     // Профиль - всегда доступен
-    final profileIndex = availableIndices.length;
-    availableIndices.add(profileIndex);
-    availableTitles.add('Профиль');
-    availableScreens.add(ScreenWrapper(builder: (_) => const ProfileScreen()));
-    availableBottomNavItems.add(const BottomNavigationBarItem(
+    _cachedTitles.add('Профиль');
+    _cachedScreens.add(ScreenWrapper(builder: (_) => const ProfileScreen()));
+    _cachedBottomNavItems.add(const BottomNavigationBarItem(
       icon: Icon(Icons.person),
       label: 'Профиль',
     ));
-    availableDrawerItems.add(_buildDrawerItem(context, icon: Icons.person, title: 'Профиль', index: profileIndex));
+    
+    _screensInitialized = true;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // КРИТИЧНО: Используем read вместо watch для authState - он меняется редко
+    // watch только для navigationIndexProvider - он меняется при навигации
+    final authState = ref.read(authStateProvider);
+    final user = authState.user;
+    final userRole = user?.role ?? 'user';
+    final currentUserRole = userRole == 'admin' ? 1 : (userRole == 'operator' ? 2 : 0);
+    
+    // Проверяем изменилась ли роль пользователя (редкий случай)
+    if (_cachedUserRole != currentUserRole) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _initializeCachedScreens();
+        if (mounted) setState(() {});
+      });
+    }
+    
+    // Используем watch только для navigationIndexProvider
+    final currentIndex = ref.watch(navigationIndexProvider);
     
     // Нормализуем текущий индекс
     int normalizedIndex = currentIndex;
-    if (normalizedIndex >= availableIndices.length) {
+    if (_cachedScreens.isEmpty || normalizedIndex >= _cachedScreens.length) {
       normalizedIndex = 0;
     }
 
     return Scaffold(
       key: _scaffoldKey,
       appBar: AppBar(
-        title: Text(availableTitles[normalizedIndex]),
+        title: Text(_cachedTitles.isEmpty || normalizedIndex >= _cachedTitles.length
+            ? 'Загрузка...' 
+            : _cachedTitles[normalizedIndex]),
         leading: IconButton(
           icon: const Icon(Icons.menu),
           onPressed: () {
@@ -628,7 +640,7 @@ class _HomeScreenState extends ConsumerState<_HomeScreen> {
                 ],
               ),
             ),
-            ...availableDrawerItems,
+            ..._buildDrawerItems(context),
             const Divider(),
             ListTile(
               leading: const Icon(Icons.sync),
@@ -659,12 +671,14 @@ class _HomeScreenState extends ConsumerState<_HomeScreen> {
           ],
         ),
       ),
-      body: IndexedStack(
-        index: normalizedIndex,
-        // Lazy loading: загружаем экраны только когда они нужны
-        // IndexedStack уже реализует lazy loading - виджеты создаются только при первом обращении
-        children: availableScreens,
-      ),
+      body: _cachedScreens.isEmpty
+          ? const Center(child: CircularProgressIndicator())
+          : IndexedStack(
+              index: normalizedIndex,
+              // КРИТИЧНО: IndexedStack сохраняет состояние всех экранов
+              // Виджеты не пересоздаются при переключении - нет мерцания
+              children: _cachedScreens,
+            ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: normalizedIndex,
         onTap: (index) {
@@ -675,9 +689,11 @@ class _HomeScreenState extends ConsumerState<_HomeScreen> {
           }
         },
         type: BottomNavigationBarType.fixed,
-        items: availableBottomNavItems,
+        items: _cachedBottomNavItems.isEmpty 
+            ? [] 
+            : _cachedBottomNavItems,
       ),
-      floatingActionButton: (normalizedIndex == 1 && !isOperator) // На экране заявок и не оператор
+      floatingActionButton: (normalizedIndex == 1 && userRole != 'operator') // На экране заявок и не оператор
           ? FloatingActionButton(
               heroTag: 'create_order_fab', // Уникальный тег для Hero
               onPressed: () async {
@@ -686,15 +702,12 @@ class _HomeScreenState extends ConsumerState<_HomeScreen> {
                     builder: (_) => const CreateOrderScreen(),
                   ),
                 );
-                // Обновляем список заявок после создания
+                // Обновляем список заявок после создания БЕЗ пересоздания виджета
                 // result может быть Order (созданная заявка) или true (успешное создание)
                 if ((result != null && result != false) && mounted) {
-                  setState(() {
-                    // Обновляем ключ для принудительного обновления OrdersListScreen
-                    _ordersRefreshKey++;
-                  });
-                  // Мгновенно обновляем список заявок
-                  // OrdersListScreen автоматически подхватит новую заявку из кэша
+                  // КРИТИЧНО: OrdersListScreen автоматически обновится из кэша
+                  // Виджет не пересоздается - нет мерцания
+                  // Данные из кэша доступны мгновенно, обновление с сервера в фоне
                 }
               },
               child: const Icon(Icons.add),
@@ -704,8 +717,42 @@ class _HomeScreenState extends ConsumerState<_HomeScreen> {
     );
   }
 
-  Widget _buildDrawerItem(BuildContext context, {required IconData icon, required String title, required int index}) {
-    final currentIndex = ref.watch(navigationIndexProvider);
+  List<Widget> _buildDrawerItems(BuildContext context) {
+    final currentIndex = ref.read(navigationIndexProvider); // Используем read вместо watch
+    final authState = ref.read(authStateProvider);
+    final user = authState.user;
+    final userRole = user?.role ?? 'user';
+    final isAdmin = userRole == 'admin';
+    final isOperator = userRole == 'operator';
+    
+    final items = <Widget>[];
+    
+    // Главная
+    items.add(_buildDrawerItem(context, icon: Icons.dashboard, title: 'Главная', index: 0, currentIndex: currentIndex));
+    
+    // Заявки
+    items.add(_buildDrawerItem(context, icon: Icons.list_alt, title: 'Заявки', index: 1, currentIndex: currentIndex));
+    
+    // Номенклатура
+    if (!isOperator) {
+      items.add(_buildDrawerItem(context, icon: Icons.inventory, title: 'Номенклатура', index: 2, currentIndex: currentIndex));
+    }
+    
+    // Отчёты или зарплаты
+    if (isAdmin) {
+      items.add(_buildDrawerItem(context, icon: Icons.analytics, title: 'Отчёты', index: 3, currentIndex: currentIndex));
+    } else if (isOperator) {
+      items.add(_buildDrawerItem(context, icon: Icons.payments, title: 'Мои зарплаты', index: 2, currentIndex: currentIndex));
+    }
+    
+    // Профиль
+    final profileIndex = _cachedTitles.isEmpty ? 0 : _cachedTitles.length - 1;
+    items.add(_buildDrawerItem(context, icon: Icons.person, title: 'Профиль', index: profileIndex, currentIndex: currentIndex));
+    
+    return items;
+  }
+  
+  Widget _buildDrawerItem(BuildContext context, {required IconData icon, required String title, required int index, required int currentIndex}) {
     final isSelected = currentIndex == index;
     return ListTile(
       leading: Icon(icon, color: isSelected ? Theme.of(context).primaryColor : null),
@@ -724,3 +771,6 @@ class _HomeScreenState extends ConsumerState<_HomeScreen> {
     );
   }
 }
+
+// Вспомогательный класс для доступа к состоянию OrdersListScreen
+// Используем импорт из orders_list_screen.dart

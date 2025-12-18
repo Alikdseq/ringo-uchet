@@ -393,10 +393,48 @@ class AuthNotifier extends StateNotifier<AuthState> {
       final newAccessToken = await _authService.refreshToken(refreshTokenValue);
       await _secureStorage.saveAccessToken(newAccessToken);
       return true;
+    } on UnauthorizedException {
+      // Если refresh token недействителен (401) - очищаем токены
+      // НЕ очищаем пароль и телефон - они нужны для автоматического входа
+      debugPrint('Token refresh failed: Refresh token недействителен');
+      await _secureStorage.clearTokens();
+      return false;
     } catch (e) {
-      // Если refresh не удался - НЕ вызываем logout (чтобы не очистить пароль)
-      // Просто возвращаем false, вызывающий код обработает ситуацию с автоматическим входом
+      // Для других ошибок просто возвращаем false
+      // Вызывающий код обработает ситуацию с автоматическим входом
       debugPrint('Token refresh failed: $e');
+      return false;
+    }
+  }
+
+  /// Попытка автоматического входа с сохраненными credentials
+  /// Используется когда refresh token истек
+  /// Возвращает true если вход успешен, false если нет сохраненных credentials или вход не удался
+  Future<bool> attemptAutoLogin() async {
+    try {
+      final savedPhone = await _secureStorage.getPhone();
+      final savedEmail = await _secureStorage.getEmail();
+      final savedPassword = await _secureStorage.getPassword();
+
+      if (savedPassword == null || savedPassword.isEmpty) {
+        return false;
+      }
+
+      if (savedPhone == null && savedEmail == null) {
+        return false;
+      }
+
+      final request = LoginRequest(
+        phone: savedPhone,
+        email: savedEmail,
+        password: savedPassword,
+      );
+
+      // Тихий вход без показа индикатора загрузки
+      await login(request, showLoading: false);
+      return true;
+    } catch (e) {
+      debugPrint('Auto-login attempt failed: $e');
       return false;
     }
   }
