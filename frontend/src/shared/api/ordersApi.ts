@@ -24,7 +24,7 @@ interface OrdersListQueryParams {
   page_size?: number;
 }
 
-interface OrderRequestPayload {
+export interface OrderRequestPayload {
   number?: string | null;
   client_id?: number | null;
   address: string;
@@ -182,7 +182,10 @@ export const OrdersApi = {
     }
   },
 
-  async update(id: string | number, payload: OrderRequestPayload): Promise<Order> {
+  async update(
+    id: string | number,
+    payload: Partial<OrderRequestPayload>,
+  ): Promise<Order> {
     const response = await httpClient.patch(`/orders/${id}/`, payload);
     const order = mapOrderFromApi(response.data);
     writeOrderDetailCache(order);

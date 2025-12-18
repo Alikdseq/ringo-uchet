@@ -17,6 +17,7 @@ import type {
   ServiceItem,
 } from "@/shared/types/catalog";
 import { AppError } from "@/shared/api/httpClient";
+import type { OrderRequestPayload } from "@/shared/api/ordersApi";
 
 function formatUtcWithoutMillis(date: Date): string {
   const iso = date.toISOString();
@@ -433,7 +434,7 @@ export default function OrderEditPage() {
   }
 
   const saveOrder = async (): Promise<Order | null> => {
-    if (!orderId || !order) return;
+    if (!orderId || !order) return null;
 
     if (!address.trim()) {
       setError("Адрес не может быть пустым");
@@ -473,7 +474,7 @@ export default function OrderEditPage() {
           }))
         : [];
 
-      const payload: Record<string, unknown> = {
+      const payload: Partial<OrderRequestPayload> = {
         address,
         description,
       };
@@ -574,6 +575,8 @@ export default function OrderEditPage() {
     } finally {
       setIsSubmitting(false);
     }
+
+    return null;
   };
 
   const handleSubmit = async (event: FormEvent) => {

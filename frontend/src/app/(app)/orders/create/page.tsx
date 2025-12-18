@@ -8,16 +8,12 @@ import { UsersApi } from "@/shared/api/usersApi";
 import { PageHeader } from "@/shared/components/ui/PageHeader";
 import { Card } from "@/shared/components/ui/Card";
 import { useDebouncedValue } from "@/shared/hooks";
-import type {
-  ClientInfo,
-  Order,
-  OrderItem,
-  OrderStatus,
-} from "@/shared/types/orders";
+import type { ClientInfo, Order, OrderItem, OrderStatus } from "@/shared/types/orders";
 import type { UserInfo } from "@/shared/types/auth";
 import { httpClient, AppError } from "@/shared/api/httpClient";
 import { CatalogApi } from "@/shared/api/catalogApi";
 import type { Equipment, MaterialItem, ServiceItem } from "@/shared/types/catalog";
+import type { OrderRequestPayload } from "@/shared/api/ordersApi";
 
 type ClientListItem = ClientInfo;
 const ORDER_DRAFT_STORAGE_KEY = "order-create-draft-v1";
@@ -523,7 +519,7 @@ export default function OrderCreatePage() {
           })
         : null;
 
-      const payload: Record<string, unknown> = {
+      const payload: OrderRequestPayload = {
         client_id: clientId,
         address,
         start_dt: formatUtcWithoutMillis(start),
