@@ -22,6 +22,7 @@ export default function ClientsCatalogPage() {
   const [editAddress, setEditAddress] = useState("");
   const [editError, setEditError] = useState<string | null>(null);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
   const [clientToDelete, setClientToDelete] = useState<ClientInfo | null>(null);
 
   const { data, isLoading, isError, error: queryError, refetch } = useQuery<
