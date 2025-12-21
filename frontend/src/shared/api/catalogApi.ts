@@ -229,7 +229,7 @@ export const CatalogApi = {
   async createAttachment(payload: {
     equipment: number;
     name: string;
-    pricing_modifier?: number;
+    price?: number;
     status?: string;
   }): Promise<Attachment> {
     const response = await httpClient.post<unknown>("/attachments/", payload);
@@ -241,7 +241,7 @@ export const CatalogApi = {
     payload: Partial<{
       equipment: number;
       name: string;
-      pricing_modifier: number;
+      price: number;
       status: string;
     }>,
   ): Promise<Attachment> {

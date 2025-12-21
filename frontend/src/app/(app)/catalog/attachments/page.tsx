@@ -16,7 +16,7 @@ export default function AttachmentsCatalogPage() {
   const [isCreateMode, setIsCreateMode] = useState(false);
   const [editEquipmentId, setEditEquipmentId] = useState<string>("");
   const [editName, setEditName] = useState("");
-  const [editPricingModifier, setEditPricingModifier] = useState("");
+  const [editPrice, setEditPrice] = useState("");
   const [editStatus, setEditStatus] = useState<EquipmentStatus>("available");
   const [modalError, setModalError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -57,7 +57,7 @@ export default function AttachmentsCatalogPage() {
     setIsCreateMode(false);
     setEditEquipmentId(att.equipment.toString());
     setEditName(att.name);
-    setEditPricingModifier(att.pricingModifier.toString());
+    setEditPrice(att.price.toString());
     setEditStatus(att.status);
     setModalError(null);
   };
@@ -67,14 +67,14 @@ export default function AttachmentsCatalogPage() {
       id: 0,
       equipment: 0,
       name: "",
-      pricingModifier: 0,
+      price: 0,
       status: "available",
       metadata: {},
     } as Attachment);
     setIsCreateMode(true);
     setEditEquipmentId("");
     setEditName("");
-    setEditPricingModifier("0");
+    setEditPrice("0");
     setEditStatus("available");
     setModalError(null);
   };
@@ -92,9 +92,9 @@ export default function AttachmentsCatalogPage() {
       return;
     }
 
-    const pricingModifier = Number(editPricingModifier.replace(",", "."));
-    if (!Number.isFinite(pricingModifier)) {
-      setModalError("Укажите корректный модификатор цены.");
+    const price = Number(editPrice.replace(",", "."));
+    if (!Number.isFinite(price) || price < 0) {
+      setModalError("Укажите корректную цену (неотрицательное число).");
       return;
     }
 
@@ -105,14 +105,14 @@ export default function AttachmentsCatalogPage() {
         await CatalogApi.createAttachment({
           equipment: equipmentId,
           name: editName.trim(),
-          pricing_modifier: pricingModifier,
+          price: price,
           status: editStatus,
         });
       } else {
         await CatalogApi.updateAttachment(editing.id, {
           equipment: equipmentId,
           name: editName.trim(),
-          pricing_modifier: pricingModifier,
+          price: price,
           status: editStatus,
         });
       }
@@ -226,8 +226,7 @@ export default function AttachmentsCatalogPage() {
                     : `Техника #${att.equipment}`}
                 </div>
                 <div className="text-[11px] text-slate-500">
-                  Модификатор: {att.pricingModifier > 0 ? "+" : ""}
-                  {att.pricingModifier.toFixed(0)}% · Статус:{" "}
+                  Цена: {att.price.toFixed(0)} ₽ · Статус:{" "}
                   {getStatusLabel(att.status)}
                 </div>
               </div>
@@ -298,14 +297,15 @@ export default function AttachmentsCatalogPage() {
               <div className="grid gap-3 md:grid-cols-2">
                 <div className="space-y-1.5">
                   <label className="block text-[11px] font-medium uppercase tracking-wide text-slate-600">
-                    Модификатор цены (%)
+                    Цена (₽)
                   </label>
                   <input
                     type="number"
+                    min={0}
                     step="0.01"
-                    value={editPricingModifier}
+                    value={editPrice}
                     onChange={(event) =>
-                      setEditPricingModifier(event.target.value)
+                      setEditPrice(event.target.value)
                     }
                     className="block w-full rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-900 shadow-sm outline-none ring-0 focus:border-slate-900"
                     placeholder="0"

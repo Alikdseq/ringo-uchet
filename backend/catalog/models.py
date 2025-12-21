@@ -180,12 +180,12 @@ class Attachment(TimeStampedModel):
         help_text="Техника, к которой относится навеска",
     )
     name = models.CharField(max_length=200, verbose_name="Название", help_text="Название навески")
-    pricing_modifier = models.DecimalField(
-        max_digits=6,
+    price = models.DecimalField(
+        max_digits=10,
         decimal_places=2,
         default=0,
-        verbose_name="Модификатор цены",
-        help_text="Модификатор цены в процентах (например, 10 = +10%)",
+        verbose_name="Цена",
+        help_text="Цена навески в рублях",
     )
     status = models.CharField(
         max_length=20,

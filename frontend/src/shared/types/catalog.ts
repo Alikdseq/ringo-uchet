@@ -50,7 +50,7 @@ export interface Attachment {
   equipmentName?: string | null;
   equipmentCode?: string | null;
   name: string;
-  pricingModifier: number;
+  price: number;
   status: EquipmentStatus;
   metadata: Record<string, unknown>;
 }
@@ -168,7 +168,7 @@ export function mapAttachmentFromApi(payload: unknown): Attachment {
     equipmentCode:
       (raw.equipment_code as string | null | undefined) ?? null,
     name: String(raw.name ?? ""),
-    pricingModifier: parseNumber(raw.pricing_modifier, 0),
+    price: parseNumber(raw.price, 0),
     status: (raw.status as EquipmentStatus) ?? "available",
     metadata:
       (raw.metadata && typeof raw.metadata === "object"
