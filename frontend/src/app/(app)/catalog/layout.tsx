@@ -9,6 +9,7 @@ const TABS = [
   { href: "/catalog/equipment", label: "Техника" },
   { href: "/catalog/services", label: "Услуги" },
   { href: "/catalog/materials", label: "Материалы" },
+  { href: "/catalog/attachments", label: "Навески" },
   { href: "/catalog/clients", label: "Клиенты" },
 ];
 

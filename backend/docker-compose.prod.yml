@@ -59,6 +59,7 @@ services:
     volumes:
       # Монтируем код для применения изменений без пересборки образа
       - ./orders:/app/orders:ro
+      - ./catalog:/app/catalog:ro
       - ./ringo_backend:/app/ringo_backend:ro
       - ./staticfiles:/app/staticfiles
       - ./media:/app/media
@@ -114,6 +115,7 @@ services:
     volumes:
       # Монтируем код для применения изменений без пересборки образа
       - ./orders:/app/orders:ro
+      - ./catalog:/app/catalog:ro
       - ./ringo_backend:/app/ringo_backend:ro
     environment:
       - DJANGO_SETTINGS_MODULE=ringo_backend.settings.prod
@@ -167,6 +169,7 @@ services:
     volumes:
       # Монтируем код для применения изменений без пересборки образа
       - ./orders:/app/orders:ro
+      - ./catalog:/app/catalog:ro
       - ./ringo_backend:/app/ringo_backend:ro
     environment:
       - DJANGO_SETTINGS_MODULE=ringo_backend.settings.prod

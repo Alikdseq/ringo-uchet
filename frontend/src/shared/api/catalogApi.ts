@@ -226,6 +226,36 @@ export const CatalogApi = {
     return mapMaybePaginated(response.data, mapAttachmentFromApi);
   },
 
+  async createAttachment(payload: {
+    equipment: number;
+    name: string;
+    pricing_modifier?: number;
+    status?: string;
+  }): Promise<Attachment> {
+    const response = await httpClient.post<unknown>("/attachments/", payload);
+    return mapAttachmentFromApi(response.data);
+  },
+
+  async updateAttachment(
+    id: number,
+    payload: Partial<{
+      equipment: number;
+      name: string;
+      pricing_modifier: number;
+      status: string;
+    }>,
+  ): Promise<Attachment> {
+    const response = await httpClient.patch<unknown>(
+      `/attachments/${id}/`,
+      payload,
+    );
+    return mapAttachmentFromApi(response.data);
+  },
+
+  async deleteAttachment(id: number): Promise<void> {
+    await httpClient.delete(`/attachments/${id}/`);
+  },
+
   async getClients(params: ClientsListParams = {}): Promise<ClientInfo[]> {
     const query: Record<string, unknown> = {};
     if (params.search) query.search = params.search;

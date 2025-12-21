@@ -4,7 +4,7 @@ from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenRefreshView, TokenBlacklistView
 
-from catalog.views import EquipmentViewSet, MaterialItemViewSet, ServiceItemViewSet
+from catalog.views import AttachmentViewSet, EquipmentViewSet, MaterialItemViewSet, ServiceItemViewSet
 from crm.views import ClientViewSet
 from finance.api import EmployeesReportView, EquipmentReportView, SummaryReportView
 from orders.views import OrderViewSet
@@ -21,6 +21,7 @@ router = DefaultRouter()
 router.register(r"equipment", EquipmentViewSet, basename="equipment")
 router.register(r"services", ServiceItemViewSet, basename="services")
 router.register(r"materials", MaterialItemViewSet, basename="materials")
+router.register(r"attachments", AttachmentViewSet, basename="attachments")
 router.register(r"clients", ClientViewSet, basename="clients")
 router.register(r"orders", OrderViewSet, basename="orders")
 

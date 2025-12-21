@@ -5,8 +5,9 @@ from drf_spectacular.utils import extend_schema, extend_schema_view
 from rest_framework import viewsets
 from rest_framework.filters import OrderingFilter, SearchFilter
 
-from .models import Equipment, MaterialItem, ServiceItem
+from .models import Attachment, Equipment, MaterialItem, ServiceItem
 from .serializers import (
+    AttachmentSerializer,
     EquipmentSerializer,
     MaterialItemSerializer,
     ServiceItemSerializer,
@@ -70,6 +71,27 @@ class MaterialItemViewSet(viewsets.ModelViewSet):
             # Если параметр is_active не указан, показываем только активные
             qs = qs.filter(is_active=True)
         return qs
+
+
+@extend_schema_view(
+    list=extend_schema(
+        summary="Список навесок",
+        description="Получить список навесок с фильтрацией по технике и статусу",
+        tags=["Catalog"],
+    ),
+    retrieve=extend_schema(
+        summary="Детали навески",
+        description="Получить детальную информацию о навеске",
+        tags=["Catalog"],
+    ),
+)
+class AttachmentViewSet(viewsets.ModelViewSet):
+    queryset = Attachment.objects.select_related("equipment").all()
+    serializer_class = AttachmentSerializer
+    filter_backends = (DjangoFilterBackend, SearchFilter, OrderingFilter)
+    filterset_fields = ("status", "equipment")
+    search_fields = ("name", "equipment__code", "equipment__name")
+    ordering_fields = ("name", "equipment__code", "status")
 
 
 
