@@ -610,58 +610,6 @@ export default function OrderEditPage() {
     }
   };
 
-  const changeStatusMutation = useMutation({
-    mutationFn: async (payload: { status: OrderStatus; comment?: string }) => {
-      if (!orderId) throw new Error("Order ID is required");
-      const updated = await OrdersApi.changeStatus(orderId, payload);
-      return updated;
-    },
-    onSuccess: async (updated) => {
-      if (orderId && updated) {
-        // Немедленно обновляем кэш заявки для всех возможных ключей
-        queryClient.setQueryData<Order>(["order", orderId], updated);
-        queryClient.setQueryData<Order>(["order-edit", orderId], updated);
-        queryClient.setQueryData<Order>(["order-complete", orderId], updated);
-        // Инвалидируем списки и отчёты в фоне (для всех пользователей, включая операторов)
-        void queryClient.invalidateQueries({ queryKey: ["orders"] });
-        void queryClient.invalidateQueries({ queryKey: ["reports"] });
-        void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-        void queryClient.invalidateQueries({ queryKey: ["profile", "operator-salary"] });
-      }
-    },
-    onError: (err: unknown) => {
-      const message =
-        err instanceof Error
-          ? err.message
-          : "Не удалось изменить статус, попробуйте позже";
-      setError(message);
-    },
-  });
-
-  // Функции для быстрого продвижения по этапам для операторов
-  const handleApprove = async () => {
-    if (!orderId || !order) return;
-    if (order.status !== "CREATED") return;
-    changeStatusMutation.mutate({
-      status: "APPROVED",
-      comment: "Одобрено оператором",
-    });
-  };
-
-  const handleStartWork = async () => {
-    if (!orderId || !order) return;
-    if (order.status !== "APPROVED") return;
-    changeStatusMutation.mutate({
-      status: "IN_PROGRESS",
-      comment: "Работа начата оператором",
-    });
-  };
-
-  const handleComplete = () => {
-    if (!orderId || !order) return;
-    if (order.status !== "IN_PROGRESS") return;
-    router.push(`/orders/${order.id}/complete`);
-  };
 
   const handleStageAction = async () => {
     if (!orderId || !order) return;
@@ -716,42 +664,6 @@ export default function OrderEditPage() {
       <PageHeader
         title={order ? `Редактирование заявки ${order.number}` : "Загрузка..."}
         subtitle="Изменение адреса, дат, операторов и номенклатуры заявки на любом этапе."
-        actions={
-          order && isOperator ? (
-            <div className="flex flex-wrap items-center gap-2">
-              {/* Кнопки продвижения по этапам для операторов */}
-              {order.status === "CREATED" ? (
-                <button
-                  type="button"
-                  onClick={handleApprove}
-                  disabled={changeStatusMutation.isPending}
-                  className="inline-flex items-center rounded-md border border-orange-500 bg-orange-500 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {changeStatusMutation.isPending ? "Одобряем..." : "Одобрить"}
-                </button>
-              ) : null}
-              {order.status === "APPROVED" ? (
-                <button
-                  type="button"
-                  onClick={handleStartWork}
-                  disabled={changeStatusMutation.isPending}
-                  className="inline-flex items-center rounded-md border border-blue-500 bg-blue-500 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {changeStatusMutation.isPending ? "Начинаем..." : "Начать работу"}
-                </button>
-              ) : null}
-              {order.status === "IN_PROGRESS" ? (
-                <button
-                  type="button"
-                  onClick={handleComplete}
-                  className="inline-flex items-center rounded-md border border-emerald-500 bg-emerald-500 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-emerald-600"
-                >
-                  Завершить
-                </button>
-              ) : null}
-            </div>
-          ) : undefined
-        }
       />
 
       {error ? (
@@ -1097,7 +1009,7 @@ export default function OrderEditPage() {
                 </button>
               ) : null}
 
-              {order && !isOperator ? (
+              {order ? (
                 (() => {
                   const action = getNextStageAction(order.status);
                   if (!action) return null;
