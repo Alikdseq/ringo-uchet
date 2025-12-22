@@ -610,6 +610,59 @@ export default function OrderEditPage() {
     }
   };
 
+  const changeStatusMutation = useMutation({
+    mutationFn: async (payload: { status: OrderStatus; comment?: string }) => {
+      if (!orderId) throw new Error("Order ID is required");
+      const updated = await OrdersApi.changeStatus(orderId, payload);
+      return updated;
+    },
+    onSuccess: async (updated) => {
+      if (orderId && updated) {
+        // Немедленно обновляем кэш заявки для всех возможных ключей
+        queryClient.setQueryData<Order>(["order", orderId], updated);
+        queryClient.setQueryData<Order>(["order-edit", orderId], updated);
+        queryClient.setQueryData<Order>(["order-complete", orderId], updated);
+        // Инвалидируем списки и отчёты в фоне (для всех пользователей, включая операторов)
+        void queryClient.invalidateQueries({ queryKey: ["orders"] });
+        void queryClient.invalidateQueries({ queryKey: ["reports"] });
+        void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+        void queryClient.invalidateQueries({ queryKey: ["profile", "operator-salary"] });
+      }
+    },
+    onError: (err: unknown) => {
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Не удалось изменить статус, попробуйте позже";
+      setError(message);
+    },
+  });
+
+  // Функции для быстрого продвижения по этапам для операторов
+  const handleApprove = async () => {
+    if (!orderId || !order) return;
+    if (order.status !== "CREATED") return;
+    changeStatusMutation.mutate({
+      status: "APPROVED",
+      comment: "Одобрено оператором",
+    });
+  };
+
+  const handleStartWork = async () => {
+    if (!orderId || !order) return;
+    if (order.status !== "APPROVED") return;
+    changeStatusMutation.mutate({
+      status: "IN_PROGRESS",
+      comment: "Работа начата оператором",
+    });
+  };
+
+  const handleComplete = () => {
+    if (!orderId || !order) return;
+    if (order.status !== "IN_PROGRESS") return;
+    router.push(`/orders/${order.id}/complete`);
+  };
+
   const handleStageAction = async () => {
     if (!orderId || !order) return;
 
