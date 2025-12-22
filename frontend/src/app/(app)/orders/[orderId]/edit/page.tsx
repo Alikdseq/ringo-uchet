@@ -2,13 +2,14 @@
 
 import React, { FormEvent, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { OrdersApi } from "@/shared/api/ordersApi";
 import { UsersApi } from "@/shared/api/usersApi";
 import { CatalogApi } from "@/shared/api/catalogApi";
 import { PageHeader } from "@/shared/components/ui/PageHeader";
 import { Card } from "@/shared/components/ui/Card";
 import { useDebouncedValue } from "@/shared/hooks";
+import { useAuthStore } from "@/shared/store/authStore";
 import type { Order, OrderItem, OrderStatus } from "@/shared/types/orders";
 import type { UserInfo } from "@/shared/types/auth";
 import type {
@@ -46,6 +47,9 @@ export default function OrderEditPage() {
   const router = useRouter();
   const orderId = params?.orderId as string | undefined;
   const queryClient = useQueryClient();
+  const user = useAuthStore((state) => state.user);
+  const role = user?.role;
+  const isOperator = role === "operator";
 
   const { data: order, isLoading, refetch } = useQuery({
     queryKey: ["order-edit", orderId],
@@ -659,6 +663,42 @@ export default function OrderEditPage() {
       <PageHeader
         title={order ? `Редактирование заявки ${order.number}` : "Загрузка..."}
         subtitle="Изменение адреса, дат, операторов и номенклатуры заявки на любом этапе."
+        actions={
+          order && isOperator ? (
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Кнопки продвижения по этапам для операторов */}
+              {order.status === "CREATED" ? (
+                <button
+                  type="button"
+                  onClick={handleApprove}
+                  disabled={changeStatusMutation.isPending}
+                  className="inline-flex items-center rounded-md border border-orange-500 bg-orange-500 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {changeStatusMutation.isPending ? "Одобряем..." : "Одобрить"}
+                </button>
+              ) : null}
+              {order.status === "APPROVED" ? (
+                <button
+                  type="button"
+                  onClick={handleStartWork}
+                  disabled={changeStatusMutation.isPending}
+                  className="inline-flex items-center rounded-md border border-blue-500 bg-blue-500 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {changeStatusMutation.isPending ? "Начинаем..." : "Начать работу"}
+                </button>
+              ) : null}
+              {order.status === "IN_PROGRESS" ? (
+                <button
+                  type="button"
+                  onClick={handleComplete}
+                  className="inline-flex items-center rounded-md border border-emerald-500 bg-emerald-500 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-emerald-600"
+                >
+                  Завершить
+                </button>
+              ) : null}
+            </div>
+          ) : undefined
+        }
       />
 
       {error ? (
@@ -668,6 +708,25 @@ export default function OrderEditPage() {
       ) : null}
 
       <form onSubmit={handleSubmit} className="space-y-4 text-xs">
+        {/* Информация о клиенте - видна всем, включая операторов */}
+        {order && order.client ? (
+          <Card className="p-4">
+            <h2 className="mb-2 text-sm font-semibold text-slate-900">Клиент</h2>
+            <div className="space-y-1 text-xs">
+              <div className="font-semibold text-slate-900">{order.client.name}</div>
+              <div className="text-slate-600">
+                {order.client.phone}
+                {order.client.email ? ` · ${order.client.email}` : ""}
+              </div>
+              {order.client.address ? (
+                <div className="text-slate-500">
+                  Адрес клиента: {order.client.address}
+                </div>
+              ) : null}
+            </div>
+          </Card>
+        ) : null}
+
         <Card className="p-4 space-y-3">
           <h2 className="mb-1 text-sm font-semibold text-slate-900">
             Основные поля
@@ -681,9 +740,23 @@ export default function OrderEditPage() {
 
           {order ? (
             <div className="space-y-3">
+              {/* Описание работы */}
               <div className="space-y-1.5">
                 <label className="block text-xs font-medium uppercase tracking-wide text-slate-600">
-                  Адрес
+                  Описание работы
+                </label>
+                <textarea
+                  className="block w-full rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-900 shadow-sm outline-none ring-0 placeholder:text-slate-400 focus:border-slate-900"
+                  rows={4}
+                  value={description}
+                  onChange={(event) => setDescription(event.target.value)}
+                  placeholder="Описание выполняемых работ..."
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block text-xs font-medium uppercase tracking-wide text-slate-600">
+                  Адрес выполнения работ
                 </label>
                 <textarea
                   className="block w-full rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-900 shadow-sm outline-none ring-0 placeholder:text-slate-400 focus:border-slate-900"
@@ -718,6 +791,7 @@ export default function OrderEditPage() {
                 </div>
               </div>
 
+              {/* Финансовая информация - видна всем */}
               <div className="grid gap-3 md:grid-cols-3">
                 <div className="space-y-1.5">
                   <label className="block text-xs font-medium uppercase tracking-wide text-slate-600">
@@ -731,11 +805,17 @@ export default function OrderEditPage() {
                     onChange={(event) =>
                       setPrepaymentAmount(event.target.value)
                     }
+                    readOnly={isOperator}
                   />
+                  {order.prepaymentStatus ? (
+                    <p className="text-[11px] text-slate-500">
+                      Статус: {order.prepaymentStatus}
+                    </p>
+                  ) : null}
                 </div>
                 <div className="space-y-1.5">
                   <label className="block text-xs font-medium uppercase tracking-wide text-slate-600">
-                    Сумма, ₽
+                    Итоговая сумма, ₽
                   </label>
                   <input
                     type="number"
@@ -743,7 +823,7 @@ export default function OrderEditPage() {
                     className="block w-full rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-900 shadow-sm outline-none ring-0 focus:border-slate-900"
                     value={totalAmount}
                     onChange={(event) => setTotalAmount(event.target.value)}
-                    disabled={items.length > 0}
+                    disabled={items.length > 0 || isOperator}
                   />
                   {items.length > 0 ? (
                     <p className="text-[11px] text-slate-500">
@@ -754,23 +834,16 @@ export default function OrderEditPage() {
                 </div>
                 <div className="space-y-1.5">
                   <label className="block text-xs font-medium uppercase tracking-wide text-slate-600">
-                    Статус
+                    Статус заявки
                   </label>
-                  <select
-                    className="block w-full rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-900 shadow-sm outline-none ring-0 focus:border-slate-900"
-                    value={status}
-                    onChange={(event) =>
-                      setStatus(event.target.value as OrderStatus)
-                    }
-                    disabled
-                  >
-                    <option value="DRAFT">Черновик</option>
-                    <option value="CREATED">Создана</option>
-                    <option value="APPROVED">Утверждена</option>
-                    <option value="IN_PROGRESS">В работе</option>
-                    <option value="COMPLETED">Завершена</option>
-                    <option value="CANCELLED">Отменена</option>
-                  </select>
+                  <div className="block w-full rounded-md border border-slate-300 bg-slate-50 px-3 py-1.5 text-xs text-slate-900">
+                    {status === "CREATED" && "Создана"}
+                    {status === "APPROVED" && "Утверждена"}
+                    {status === "IN_PROGRESS" && "В работе"}
+                    {status === "COMPLETED" && "Завершена"}
+                    {status === "CANCELLED" && "Отменена"}
+                    {status === "DRAFT" && "Черновик"}
+                  </div>
                 </div>
               </div>
             </div>
@@ -947,7 +1020,7 @@ export default function OrderEditPage() {
             </button>
 
             <div className="flex flex-1 items-center justify-end gap-2">
-              {order ? (
+              {order && !isOperator ? (
                 <button
                   type="button"
                   onClick={() => setIsDeleteModalOpen(true)}
@@ -971,7 +1044,7 @@ export default function OrderEditPage() {
                 </button>
               ) : null}
 
-              {order ? (
+              {order && !isOperator ? (
                 (() => {
                   const action = getNextStageAction(order.status);
                   if (!action) return null;
@@ -989,6 +1062,14 @@ export default function OrderEditPage() {
                   );
                 })()
               ) : null}
+
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="rounded-md border border-slate-900 bg-slate-900 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isSubmitting ? "Сохраняем..." : "Сохранить"}
+              </button>
             </div>
           </div>
         </div>
