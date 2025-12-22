@@ -101,10 +101,11 @@ export default function OrderCompletePage() {
       queryClient.setQueryData<Order>(["order", updated.id], updated);
       queryClient.setQueryData<Order>(["order-edit", updated.id], updated);
       queryClient.setQueryData<Order>(["order-complete", orderId], updated);
-      // Инвалидируем списки и отчёты в фоне
+      // Инвалидируем списки и отчёты в фоне (для всех пользователей, включая операторов)
       void queryClient.invalidateQueries({ queryKey: ["orders"] });
       void queryClient.invalidateQueries({ queryKey: ["reports"] });
       void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      void queryClient.invalidateQueries({ queryKey: ["profile", "operator-salary"] });
 
       // Перенаправляем на список заявок после успешного завершения
       router.replace("/orders");

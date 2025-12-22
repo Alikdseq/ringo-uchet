@@ -602,7 +602,11 @@ export default function OrderCreatePage() {
         window.localStorage.removeItem(ORDER_DRAFT_STORAGE_KEY);
       }
       queryClient.setQueryData<Order>(["order", created.id], created);
+      // Инвалидируем кэш заявок для всех пользователей, включая операторов
+      // Это гарантирует, что заявка сразу появится в списке у назначенного оператора
       void queryClient.invalidateQueries({ queryKey: ["orders"] });
+      void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      void queryClient.invalidateQueries({ queryKey: ["profile", "operator-salary"] });
 
       // После создания возвращаемся к списку заявок (каталогу)
       router.replace("/orders");

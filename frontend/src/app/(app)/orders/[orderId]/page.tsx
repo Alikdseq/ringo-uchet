@@ -103,10 +103,11 @@ export default function OrderDetailPage() {
         // Немедленно обновляем кэш заявки
         queryClient.setQueryData<Order>(["order", orderId], updated);
         queryClient.setQueryData<Order>(["order-complete", orderId], updated);
-        // Инвалидируем списки и отчёты в фоне
+        // Инвалидируем списки и отчёты в фоне (для всех пользователей, включая операторов)
         void queryClient.invalidateQueries({ queryKey: ["orders"] });
         void queryClient.invalidateQueries({ queryKey: ["reports"] });
         void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+        void queryClient.invalidateQueries({ queryKey: ["profile", "operator-salary"] });
       }
       setIsStatusModalOpen(false);
       setStatusError(null);
