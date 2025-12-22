@@ -9,6 +9,7 @@ import type { Order, OrderItem, OrderStatus } from "@/shared/types/orders";
 import { StatusBadge } from "@/shared/components/ui/StatusBadge";
 import { PageHeader } from "@/shared/components/ui/PageHeader";
 import { Card } from "@/shared/components/ui/Card";
+import { useAuthStore } from "@/shared/store/authStore";
 
 function OrderDetailSkeleton() {
   return (
@@ -71,6 +72,9 @@ export default function OrderDetailPage() {
   const router = useRouter();
   const orderId = params?.orderId as string | undefined;
   const queryClient = useQueryClient();
+  const user = useAuthStore((state) => state.user);
+  const role = user?.role;
+  const isOperator = role === "operator";
 
   const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
   const [nextStatus, setNextStatus] = useState<OrderStatus | "">("");
@@ -164,6 +168,37 @@ export default function OrderDetailPage() {
     });
   };
 
+  // Функции для быстрого продвижения по этапам
+  const handleApprove = () => {
+    if (!orderId || !order) return;
+    if (order.status !== "CREATED") return;
+    setNextStatus("APPROVED");
+    setStatusComment("");
+    setStatusError(null);
+    changeStatusMutation.mutate({
+      status: "APPROVED",
+      comment: "Одобрено оператором",
+    });
+  };
+
+  const handleStartWork = () => {
+    if (!orderId || !order) return;
+    if (order.status !== "APPROVED") return;
+    setNextStatus("IN_PROGRESS");
+    setStatusComment("");
+    setStatusError(null);
+    changeStatusMutation.mutate({
+      status: "IN_PROGRESS",
+      comment: "Работа начата оператором",
+    });
+  };
+
+  const handleComplete = () => {
+    if (!orderId || !order) return;
+    if (order.status !== "IN_PROGRESS") return;
+    router.push(`/orders/${order.id}/complete`);
+  };
+
   const handleDelete = async () => {
     if (!order) return;
     setIsDeleting(true);
@@ -210,36 +245,73 @@ export default function OrderDetailPage() {
             </button>
             {order ? (
               <>
-                <Link
-                  href={`/orders/${order.id}/edit`}
-                  className="inline-flex items-center rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50"
-                >
-                  Изменить
-                </Link>
-                <button
-                  type="button"
-                  onClick={handleOpenStatusModal}
-                  className="inline-flex items-center rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50"
-                >
-                  Изменить статус
-                </button>
-                {order.status === "IN_PROGRESS" ? (
-                  <Link
-                    href={`/orders/${order.id}/complete`}
-                    className="inline-flex items-center rounded-md border border-emerald-500 bg-emerald-500 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-emerald-600"
-                  >
-                    Завершить
-                  </Link>
-                ) : null}
-                {order.status !== "COMPLETED" ? (
-                  <button
-                    type="button"
-                    onClick={() => setIsDeleteModalOpen(true)}
-                    className="rounded-md border border-red-300 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 shadow-sm hover:bg-red-100"
-                  >
-                    Удалить
-                  </button>
-                ) : null}
+                {isOperator ? (
+                  <>
+                    {/* Кнопки продвижения по этапам для операторов */}
+                    {order.status === "CREATED" ? (
+                      <button
+                        type="button"
+                        onClick={handleApprove}
+                        disabled={changeStatusMutation.isPending}
+                        className="inline-flex items-center rounded-md border border-orange-500 bg-orange-500 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {changeStatusMutation.isPending ? "Одобряем..." : "Одобрить"}
+                      </button>
+                    ) : null}
+                    {order.status === "APPROVED" ? (
+                      <button
+                        type="button"
+                        onClick={handleStartWork}
+                        disabled={changeStatusMutation.isPending}
+                        className="inline-flex items-center rounded-md border border-blue-500 bg-blue-500 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {changeStatusMutation.isPending ? "Начинаем..." : "Начать работу"}
+                      </button>
+                    ) : null}
+                    {order.status === "IN_PROGRESS" ? (
+                      <button
+                        type="button"
+                        onClick={handleComplete}
+                        className="inline-flex items-center rounded-md border border-emerald-500 bg-emerald-500 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-emerald-600"
+                      >
+                        Завершить
+                      </button>
+                    ) : null}
+                  </>
+                ) : (
+                  <>
+                    <Link
+                      href={`/orders/${order.id}/edit`}
+                      className="inline-flex items-center rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+                    >
+                      Изменить
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={handleOpenStatusModal}
+                      className="inline-flex items-center rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+                    >
+                      Изменить статус
+                    </button>
+                    {order.status === "IN_PROGRESS" ? (
+                      <Link
+                        href={`/orders/${order.id}/complete`}
+                        className="inline-flex items-center rounded-md border border-emerald-500 bg-emerald-500 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-emerald-600"
+                      >
+                        Завершить
+                      </Link>
+                    ) : null}
+                    {order.status !== "COMPLETED" ? (
+                      <button
+                        type="button"
+                        onClick={() => setIsDeleteModalOpen(true)}
+                        className="rounded-md border border-red-300 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 shadow-sm hover:bg-red-100"
+                      >
+                        Удалить
+                      </button>
+                    ) : null}
+                  </>
+                )}
               </>
             ) : null}
             <button
@@ -327,6 +399,15 @@ export default function OrderDetailPage() {
               </div>
             </div>
           </Card>
+
+          {/* Описание работы */}
+          {order.description ? (
+            <Section title="Описание работы">
+              <div className="text-xs text-slate-700 whitespace-pre-wrap">
+                {order.description}
+              </div>
+            </Section>
+          ) : null}
 
           {/* Клиент и адрес/карта */}
           <div className="grid gap-4 md:grid-cols-2">
