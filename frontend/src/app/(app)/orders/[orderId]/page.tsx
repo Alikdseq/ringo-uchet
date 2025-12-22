@@ -173,13 +173,6 @@ export default function OrderDetailPage() {
           : "Не удалось изменить статус, попробуйте позже";
       setStatusError(message);
     },
-    onError: (err: unknown) => {
-      const message =
-        err instanceof Error
-          ? err.message
-          : "Не удалось изменить статус, попробуйте позже";
-      setStatusError(message);
-    },
   });
 
   const handleDownloadReceipt = async () => {
