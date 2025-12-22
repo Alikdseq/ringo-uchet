@@ -61,6 +61,7 @@ services:
       - ./orders:/app/orders:ro
       - ./catalog:/app/catalog:ro
       - ./ringo_backend:/app/ringo_backend:ro
+      - ./users:/app/users:ro
       - ./staticfiles:/app/staticfiles
       - ./media:/app/media
     environment:
@@ -117,6 +118,7 @@ services:
       - ./orders:/app/orders:ro
       - ./catalog:/app/catalog:ro
       - ./ringo_backend:/app/ringo_backend:ro
+      - ./users:/app/users:ro
     environment:
       - DJANGO_SETTINGS_MODULE=ringo_backend.settings.prod
       - POSTGRES_HOST=db
@@ -171,6 +173,7 @@ services:
       - ./orders:/app/orders:ro
       - ./catalog:/app/catalog:ro
       - ./ringo_backend:/app/ringo_backend:ro
+      - ./users:/app/users:ro
     environment:
       - DJANGO_SETTINGS_MODULE=ringo_backend.settings.prod
       - POSTGRES_HOST=db
