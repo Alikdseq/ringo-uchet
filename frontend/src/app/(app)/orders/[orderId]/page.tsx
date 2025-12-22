@@ -77,16 +77,6 @@ export default function OrderDetailPage() {
   const isOperator = role === "operator";
   const isManager = role === "manager";
   const isAdmin = role === "admin";
-  
-  // Проверяем, является ли текущий пользователь оператором этой заявки
-  const isOrderOperator = order
-    ? (order.operators?.some((op) => op.id === user?.id) ||
-       order.operator?.id === user?.id)
-    : false;
-  
-  // Операторы должны видеть кнопки для своих заявок (назначенных им)
-  // Менеджеры и админы видят кнопки для всех заявок
-  const canSeeActionButtons = !isOperator || isOrderOperator || isManager || isAdmin;
 
   const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
   const [nextStatus, setNextStatus] = useState<OrderStatus | "">("");
@@ -107,6 +97,16 @@ export default function OrderDetailPage() {
     enabled: Boolean(orderId),
     queryFn: () => OrdersApi.get(orderId as string),
   });
+
+  // Проверяем, является ли текущий пользователь оператором этой заявки
+  const isOrderOperator = order
+    ? (order.operators?.some((op) => op.id === user?.id) ||
+       order.operator?.id === user?.id)
+    : false;
+  
+  // Операторы должны видеть кнопки для своих заявок (назначенных им)
+  // Менеджеры и админы видят кнопки для всех заявок
+  const canSeeActionButtons = !isOperator || isOrderOperator || isManager || isAdmin;
 
   const changeStatusMutation = useMutation({
     mutationFn: async (payload: { status: OrderStatus; comment?: string }) => {

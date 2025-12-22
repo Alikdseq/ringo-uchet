@@ -7,8 +7,25 @@ import axios, {
 import type { ApiErrorBody } from "./types";
 import { useAuthStore } from "@/shared/store/authStore";
 
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://ringoouchet.ru/api/v1";
+// Определяем базовый URL API
+// В production через nginx используем относительный путь
+// В development можно указать полный URL через переменную окружения
+const getApiBaseUrl = () => {
+  // Если указана переменная окружения, используем её
+  if (process.env.NEXT_PUBLIC_API_BASE_URL) {
+    return process.env.NEXT_PUBLIC_API_BASE_URL;
+  }
+  
+  // В браузере используем относительный путь (работает через nginx прокси)
+  if (typeof window !== "undefined") {
+    return "/api/v1";
+  }
+  
+  // На сервере (SSR) используем полный URL или дефолтный
+  return process.env.API_BASE_URL || "https://ringoouchet.ru/api/v1";
+};
+
+const API_BASE_URL = getApiBaseUrl();
 
 const DEFAULT_TIMEOUT_MS = 25_000;
 

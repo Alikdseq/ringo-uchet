@@ -103,6 +103,21 @@ services:
     networks:
       - ringo-net
 
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_API_URL: http://localhost/api
+    ports:
+      - "3000:3000"
+    depends_on:
+      - django-api
+    networks:
+      - ringo-net
+    restart: unless-stopped
+
   nginx:
     image: nginx:1.25-alpine
     volumes:
@@ -111,8 +126,10 @@ services:
       - "80:80"
     depends_on:
       - django-api
+      - frontend
     networks:
       - ringo-net
+    restart: unless-stopped
 
 volumes:
   pgdata:
