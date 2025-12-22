@@ -97,16 +97,17 @@ export default function OrderCompletePage() {
 
       const updated = await OrdersApi.complete(orderId, payload);
 
-      // Немедленно обновляем кэш заявки
+      // Немедленно обновляем кэш заявки для всех возможных ключей
       queryClient.setQueryData<Order>(["order", updated.id], updated);
+      queryClient.setQueryData<Order>(["order-edit", updated.id], updated);
       queryClient.setQueryData<Order>(["order-complete", orderId], updated);
       // Инвалидируем списки и отчёты в фоне
       void queryClient.invalidateQueries({ queryKey: ["orders"] });
       void queryClient.invalidateQueries({ queryKey: ["reports"] });
       void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
 
-      // Перенаправляем на страницу деталей заявки, чтобы показать обновленный статус
-      router.replace(`/orders/${updated.id}`);
+      // Перенаправляем на список заявок после успешного завершения
+      router.replace("/orders");
     } catch (err) {
       const message =
         err instanceof Error

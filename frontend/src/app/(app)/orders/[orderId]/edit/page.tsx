@@ -621,14 +621,12 @@ export default function OrderEditPage() {
       queryClient.setQueryData<Order>(["order", orderId], updated);
       queryClient.setQueryData<Order>(["order-edit", orderId], updated);
       queryClient.setQueryData<Order>(["order-complete", orderId], updated);
-      setStatus(action.nextStatus);
-      // Обновляем локальное состояние заявки через refetch
-      await refetch();
       // Инвалидируем списки и отчёты в фоне
       void queryClient.invalidateQueries({ queryKey: ["orders"] });
       void queryClient.invalidateQueries({ queryKey: ["reports"] });
       void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-      // НЕ перенаправляем - остаёмся на странице редактирования
+      // Перенаправляем на список заявок после успешного изменения статуса
+      router.replace("/orders");
     } else if (action.type === "complete") {
       router.push(`/orders/${saved.id}/complete`);
     }

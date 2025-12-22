@@ -112,8 +112,8 @@ export default function OrderDetailPage() {
       setStatusError(null);
       setStatusComment("");
       setNextStatus("");
-      // Обновляем данные на странице
-      await refetch();
+      // Перенаправляем на список заявок после успешного изменения статуса
+      router.replace("/orders");
     },
     onError: (err: unknown) => {
       const message =
