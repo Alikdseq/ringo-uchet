@@ -195,9 +195,12 @@ export const OrdersApi = {
   async changeStatus(
     id: string | number,
     data: OrderStatusRequestPayload,
-  ): Promise<void> {
+  ): Promise<Order> {
     try {
       await httpClient.patch(`/orders/${id}/status/`, data);
+      // После изменения статуса получаем обновленную заявку
+      const updated = await this.get(String(id));
+      return updated;
     } catch (error) {
       const appError = error as AppError;
       if (appError.isNetworkError || appError.isTimeout) {

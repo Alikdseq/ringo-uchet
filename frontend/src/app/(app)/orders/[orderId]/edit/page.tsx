@@ -47,7 +47,7 @@ export default function OrderEditPage() {
   const orderId = params?.orderId as string | undefined;
   const queryClient = useQueryClient();
 
-  const { data: order, isLoading } = useQuery({
+  const { data: order, isLoading, refetch } = useQuery({
     queryKey: ["order-edit", orderId],
     enabled: Boolean(orderId),
     queryFn: () => OrdersApi.get(orderId as string),
@@ -616,13 +616,19 @@ export default function OrderEditPage() {
     if (!action) return;
 
     if (action.type === "status" && action.nextStatus) {
-      await OrdersApi.changeStatus(orderId, { status: action.nextStatus });
+      const updated = await OrdersApi.changeStatus(orderId, { status: action.nextStatus });
+      // Немедленно обновляем кэш заявки для всех возможных ключей
+      queryClient.setQueryData<Order>(["order", orderId], updated);
+      queryClient.setQueryData<Order>(["order-edit", orderId], updated);
+      queryClient.setQueryData<Order>(["order-complete", orderId], updated);
       setStatus(action.nextStatus);
+      // Обновляем локальное состояние заявки через refetch
+      await refetch();
+      // Инвалидируем списки и отчёты в фоне
       void queryClient.invalidateQueries({ queryKey: ["orders"] });
-      void queryClient.invalidateQueries({ queryKey: ["order", orderId] });
       void queryClient.invalidateQueries({ queryKey: ["reports"] });
       void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-      router.replace("/orders");
+      // НЕ перенаправляем - остаёмся на странице редактирования
     } else if (action.type === "complete") {
       router.push(`/orders/${saved.id}/complete`);
     }

@@ -94,17 +94,25 @@ export default function OrderDetailPage() {
 
   const changeStatusMutation = useMutation({
     mutationFn: async (payload: { status: OrderStatus; comment?: string }) => {
-      if (!orderId) return;
-      await OrdersApi.changeStatus(orderId, payload);
+      if (!orderId) throw new Error("Order ID is required");
+      const updated = await OrdersApi.changeStatus(orderId, payload);
+      return updated;
     },
-    onSuccess: async () => {
-      if (orderId) {
+    onSuccess: async (updated) => {
+      if (orderId && updated) {
+        // Немедленно обновляем кэш заявки
+        queryClient.setQueryData<Order>(["order", orderId], updated);
+        queryClient.setQueryData<Order>(["order-complete", orderId], updated);
+        // Инвалидируем списки и отчёты в фоне
         void queryClient.invalidateQueries({ queryKey: ["orders"] });
+        void queryClient.invalidateQueries({ queryKey: ["reports"] });
+        void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       }
       setIsStatusModalOpen(false);
       setStatusError(null);
       setStatusComment("");
       setNextStatus("");
+      // Обновляем данные на странице
       await refetch();
     },
     onError: (err: unknown) => {
