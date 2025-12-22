@@ -311,19 +311,19 @@ export default function OrderCreatePage() {
     }
   };
 
-  const loadClients = async () => {
+  const loadClients = async (searchQuery?: string) => {
     setIsLoadingClients(true);
     try {
-      const response = await httpClient.get<ClientListItem[]>("/clients/", {
-        params: debouncedClientSearch
-          ? { search: debouncedClientSearch }
-          : undefined,
-      });
-      setClients(response.data ?? []);
+      const query = searchQuery ?? debouncedClientSearch;
+      const clientsList = await CatalogApi.getClients(
+        query ? { search: query } : {},
+      );
+      setClients(clientsList);
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Не удалось загрузить клиентов";
       setError(message);
+      setClients([]);
     } finally {
       setIsLoadingClients(false);
     }
@@ -340,10 +340,10 @@ export default function OrderCreatePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debouncedClientSearch]);
 
-  // Загружаем всех клиентов при первом открытии страницы
+  // Загружаем всех клиентов при первом открытии страницы (если поле поиска пустое)
   useEffect(() => {
-    if (clientSearch === "" && clients.length === 0) {
-      void loadClients();
+    if (clientSearch === "" && clients.length === 0 && !isLoadingClients) {
+      void loadClients("");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -674,7 +674,8 @@ export default function OrderCreatePage() {
               <button
                 type="button"
                 onClick={() => {
-                  void loadClients();
+                  // При нажатии кнопки используем текущее значение поиска, а не debounced
+                  void loadClients(clientSearch);
                 }}
                 disabled={isLoadingClients}
                 className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
@@ -710,7 +711,7 @@ export default function OrderCreatePage() {
                   );
                 })}
               </ul>
-            ) : debouncedClientSearch ? (
+            ) : (clientSearch || debouncedClientSearch) && !isLoadingClients ? (
               <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 p-2 text-xs text-slate-500">
                 Клиенты не найдены
               </div>
