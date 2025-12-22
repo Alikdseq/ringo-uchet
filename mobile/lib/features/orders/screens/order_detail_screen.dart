@@ -674,13 +674,17 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
     final isOrderOperator = _order!.operators?.any((op) => op.id == currentUserId) == true ||
         _order!.operator?.id == currentUserId;
     
+    // Операторы должны видеть кнопки для своих заявок (назначенных им)
+    // Менеджеры и админы видят кнопки для всех заявок
+    final canSeeButtons = !isOperator || isOrderOperator;
+    
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // Кнопки смены статуса (доступны менеджерам/админам и операторам этой заявки)
-          if (!isOperator || isOrderOperator) ...[
+          if (canSeeButtons) ...[
             if (_order!.status == OrderStatus.draft)
               ElevatedButton.icon(
                 onPressed: () => _changeStatus(OrderStatus.created),

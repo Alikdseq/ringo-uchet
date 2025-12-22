@@ -701,9 +701,7 @@ export default function OrderEditPage() {
             <div className="text-xs text-slate-500">
               Загружаем данные заявки...
             </div>
-          ) : null}
-
-          {order ? (
+          ) : order ? (
             <div className="space-y-3">
               {/* Описание работы */}
               <div className="space-y-1.5">

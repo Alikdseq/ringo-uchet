@@ -75,6 +75,18 @@ export default function OrderDetailPage() {
   const user = useAuthStore((state) => state.user);
   const role = user?.role;
   const isOperator = role === "operator";
+  const isManager = role === "manager";
+  const isAdmin = role === "admin";
+  
+  // Проверяем, является ли текущий пользователь оператором этой заявки
+  const isOrderOperator = order
+    ? (order.operators?.some((op) => op.id === user?.id) ||
+       order.operator?.id === user?.id)
+    : false;
+  
+  // Операторы должны видеть кнопки для своих заявок (назначенных им)
+  // Менеджеры и админы видят кнопки для всех заявок
+  const canSeeActionButtons = !isOperator || isOrderOperator || isManager || isAdmin;
 
   const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
   const [nextStatus, setNextStatus] = useState<OrderStatus | "">("");
@@ -245,9 +257,9 @@ export default function OrderDetailPage() {
             </button>
             {order ? (
               <>
-                {isOperator ? (
+                {canSeeActionButtons ? (
                   <>
-                    {/* Кнопки продвижения по этапам для операторов */}
+                    {/* Кнопки продвижения по этапам для операторов, менеджеров и админов */}
                     {order.status === "CREATED" ? (
                       <button
                         type="button"
@@ -277,41 +289,35 @@ export default function OrderDetailPage() {
                         Завершить
                       </button>
                     ) : null}
-                  </>
-                ) : (
-                  <>
-                    <Link
-                      href={`/orders/${order.id}/edit`}
-                      className="inline-flex items-center rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50"
-                    >
-                      Изменить
-                    </Link>
-                    <button
-                      type="button"
-                      onClick={handleOpenStatusModal}
-                      className="inline-flex items-center rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50"
-                    >
-                      Изменить статус
-                    </button>
-                    {order.status === "IN_PROGRESS" ? (
-                      <Link
-                        href={`/orders/${order.id}/complete`}
-                        className="inline-flex items-center rounded-md border border-emerald-500 bg-emerald-500 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-emerald-600"
-                      >
-                        Завершить
-                      </Link>
-                    ) : null}
-                    {order.status !== "COMPLETED" ? (
-                      <button
-                        type="button"
-                        onClick={() => setIsDeleteModalOpen(true)}
-                        className="rounded-md border border-red-300 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 shadow-sm hover:bg-red-100"
-                      >
-                        Удалить
-                      </button>
+                    {/* Дополнительные кнопки для менеджеров и админов */}
+                    {!isOperator ? (
+                      <>
+                        <Link
+                          href={`/orders/${order.id}/edit`}
+                          className="inline-flex items-center rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+                        >
+                          Изменить
+                        </Link>
+                        <button
+                          type="button"
+                          onClick={handleOpenStatusModal}
+                          className="inline-flex items-center rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+                        >
+                          Изменить статус
+                        </button>
+                        {order.status !== "COMPLETED" ? (
+                          <button
+                            type="button"
+                            onClick={() => setIsDeleteModalOpen(true)}
+                            className="rounded-md border border-red-300 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 shadow-sm hover:bg-red-100"
+                          >
+                            Удалить
+                          </button>
+                        ) : null}
+                      </>
                     ) : null}
                   </>
-                )}
+                ) : null}
               </>
             ) : null}
             <button
