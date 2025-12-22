@@ -318,8 +318,14 @@ export default function OrdersPage() {
           </div>
         ) : null}
 
-        {filteredOrdersForRole.map((order) => (
-          <Link key={order.id} href={`/orders/${order.id}/edit`}>
+        {filteredOrdersForRole.map((order) => {
+          // Для операторов ведем на детальную страницу, для остальных - на редактирование
+          const detailUrl = role === "operator" 
+            ? `/orders/${order.id}` 
+            : `/orders/${order.id}/edit`;
+          
+          return (
+          <Link key={order.id} href={detailUrl}>
             <Card className="mb-1 flex items-center justify-between rounded-xl px-3 py-3 text-sm shadow-sm">
               <div className="space-y-1">
                 <div className="text-sm font-semibold text-slate-900">
@@ -343,7 +349,8 @@ export default function OrdersPage() {
               </div>
             </Card>
           </Link>
-        ))}
+          );
+        })}
 
         {!isLoading && filteredOrdersForRole.length === 0 ? (
           <div className="rounded-md border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-xs text-slate-500">

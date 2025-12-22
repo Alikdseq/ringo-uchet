@@ -365,13 +365,16 @@ export default function OrderDetailPage() {
                 >
                   {isReceiptLoading ? "Формируем чек..." : "Получить чек"}
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setIsDeleteModalOpen(true)}
-                  className="inline-flex flex-1 items-center justify-center rounded-md border border-red-300 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 shadow-sm hover:bg-red-100 md:flex-none"
-                >
-                  Удалить
-                </button>
+                {/* Кнопка удаления только для менеджеров и админов */}
+                {!isOperator ? (
+                  <button
+                    type="button"
+                    onClick={() => setIsDeleteModalOpen(true)}
+                    className="inline-flex flex-1 items-center justify-center rounded-md border border-red-300 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 shadow-sm hover:bg-red-100 md:flex-none"
+                  >
+                    Удалить
+                  </button>
+                ) : null}
               </div>
             </Card>
           ) : null}
