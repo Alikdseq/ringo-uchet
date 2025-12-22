@@ -46,7 +46,7 @@ export default function OperatorsCatalogPage() {
     staleTime: 3000,
     refetchOnWindowFocus: true,
     // Используем предыдущие данные во время обновления (без мерцаний)
-    placeholderData: (previousData) => previousData,
+    placeholderData: (previousData: UserInfo[] | undefined) => previousData,
     // Не показываем loading при background refetch
     notifyOnChangeProps: ["data", "error"],
   });

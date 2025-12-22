@@ -64,7 +64,7 @@ function useOrdersData(filters: OrdersListFilters) {
     // Данные считаются свежими 3 секунды
     staleTime: 3000,
     // Используем предыдущие данные во время обновления (без мерцаний)
-    placeholderData: (previousData) => previousData,
+    placeholderData: (previousData: Order[] | undefined) => previousData,
     // Не показываем loading при background refetch
     notifyOnChangeProps: ["data", "error"],
   });

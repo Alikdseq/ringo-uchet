@@ -21,7 +21,7 @@ export const queryClient = new QueryClient({
       // Включаем refetch при монтировании (если данные устарели)
       refetchOnMount: true,
       // Используем предыдущие данные во время обновления для плавности (без мерцаний)
-      placeholderData: (previousData) => previousData,
+      placeholderData: (previousData: unknown) => previousData,
       // Не показываем loading состояние при background refetch
       notifyOnChangeProps: ["data", "error"],
     },
