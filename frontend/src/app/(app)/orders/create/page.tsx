@@ -163,16 +163,18 @@ export default function OrderCreatePage() {
   const handleSelectClient = (client: ClientListItem) => {
     setSelectedClient(client);
 
-    // Автоподстановка основных полей по выбранному клиенту
+    // Автоподстановка всех полей по выбранному клиенту
     setNewClientName(client.name ?? "");
     setNewClientPhone(client.phone ?? "");
 
     if (client.email) {
       setNewClientEmail(client.email);
+    } else {
+      setNewClientEmail("");
     }
 
-    // Адрес подставляем только если пользователь ещё ничего не вводил
-    if (!address && client.address) {
+    // Адрес заполняем автоматически, если он есть у клиента
+    if (client.address) {
       setAddress(client.address);
     }
   };
@@ -331,6 +333,20 @@ export default function OrderCreatePage() {
     void loadCatalog();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [catalogType, debouncedCatalogSearch]);
+
+  // Автоматическая загрузка клиентов при изменении поискового запроса
+  useEffect(() => {
+    void loadClients();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedClientSearch]);
+
+  // Загружаем всех клиентов при первом открытии страницы
+  useEffect(() => {
+    if (clientSearch === "" && clients.length === 0) {
+      void loadClients();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const toggleOperator = (id: number) => {
     setOperatorIds((prev) =>
@@ -666,14 +682,18 @@ export default function OrderCreatePage() {
                 {isLoadingClients ? "Поиск..." : "Найти"}
               </button>
             </div>
-            {clients.length > 0 ? (
+            {isLoadingClients ? (
+              <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 p-2 text-xs text-slate-500">
+                Загрузка клиентов...
+              </div>
+            ) : clients.length > 0 ? (
               <ul className="mt-2 max-h-40 space-y-1 overflow-y-auto rounded-md border border-slate-200 bg-slate-50 p-2 text-xs">
                 {clients.map((client) => {
                   const active = selectedClient?.id === client.id;
                   return (
                     <li
                       key={client.id}
-                      className={`flex cursor-pointer items-center justify-between rounded px-2 py-1 ${
+                      className={`flex cursor-pointer items-center justify-between rounded px-2 py-1.5 transition-colors ${
                         active
                           ? "bg-slate-900 text-white"
                           : "hover:bg-slate-200"
@@ -683,10 +703,17 @@ export default function OrderCreatePage() {
                       <span className="truncate">
                         {client.name} · {client.phone}
                       </span>
+                      {active ? (
+                        <span className="ml-2 text-xs">✓</span>
+                      ) : null}
                     </li>
                   );
                 })}
               </ul>
+            ) : debouncedClientSearch ? (
+              <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 p-2 text-xs text-slate-500">
+                Клиенты не найдены
+              </div>
             ) : null}
           </div>
 
