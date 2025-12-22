@@ -2,12 +2,17 @@ from __future__ import annotations
 
 import logging
 
-from rest_framework import status
+from django_filters.rest_framework import DjangoFilterBackend
+from drf_spectacular.utils import extend_schema, extend_schema_view
+from rest_framework import status, viewsets
 from rest_framework.decorators import api_view, permission_classes
+from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework.exceptions import ValidationError, AuthenticationFailed, APIException
 from rest_framework_simplejwt.views import TokenObtainPairView
+from .models import User, UserRole
+from .permissions import RolePermission
 from .serializers import (
     CustomTokenObtainPairSerializer,
     UserSerializer,
@@ -208,3 +213,56 @@ def register_view(request):
             },
             status=status.HTTP_400_BAD_REQUEST,
         )
+
+
+@extend_schema_view(
+    list=extend_schema(
+        summary="Список пользователей",
+        description="Получить список пользователей (только для админа)",
+        tags=["Users"],
+    ),
+    retrieve=extend_schema(
+        summary="Детали пользователя",
+        description="Получить детальную информацию о пользователе (только для админа)",
+        tags=["Users"],
+    ),
+    create=extend_schema(
+        summary="Создать пользователя",
+        description="Создать нового пользователя (только для админа)",
+        tags=["Users"],
+    ),
+    update=extend_schema(
+        summary="Обновить пользователя",
+        description="Обновить информацию о пользователе (только для админа)",
+        tags=["Users"],
+    ),
+    partial_update=extend_schema(
+        summary="Частично обновить пользователя",
+        description="Частично обновить информацию о пользователе (только для админа)",
+        tags=["Users"],
+    ),
+    destroy=extend_schema(
+        summary="Удалить пользователя",
+        description="Удалить пользователя (только для админа)",
+        tags=["Users"],
+    ),
+)
+class UserViewSet(viewsets.ModelViewSet):
+    """ViewSet для управления пользователями (только для админа)"""
+    
+    queryset = User.objects.all().order_by("first_name", "last_name", "username")
+    serializer_class = UserSerializer
+    permission_classes = [IsAuthenticated, RolePermission]
+    allowed_roles = [UserRole.ADMIN]
+    filter_backends = (DjangoFilterBackend, SearchFilter, OrderingFilter)
+    filterset_fields = ("role", "is_active")
+    search_fields = ("first_name", "last_name", "username", "email", "phone")
+    ordering_fields = ("first_name", "last_name", "username", "date_joined", "role")
+    
+    def get_queryset(self):
+        """Фильтруем по роли оператора, если указан параметр role=operator"""
+        queryset = super().get_queryset()
+        role_filter = self.request.query_params.get("role")
+        if role_filter == "operator":
+            queryset = queryset.filter(role=UserRole.OPERATOR)
+        return queryset

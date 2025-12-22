@@ -15,6 +15,7 @@ from users.views import (
     operator_salary_view,
     change_password_view,
     register_view,
+    UserViewSet,
 )
 
 router = DefaultRouter()
@@ -24,6 +25,7 @@ router.register(r"materials", MaterialItemViewSet, basename="materials")
 router.register(r"attachments", AttachmentViewSet, basename="attachments")
 router.register(r"clients", ClientViewSet, basename="clients")
 router.register(r"orders", OrderViewSet, basename="orders")
+router.register(r"users", UserViewSet, basename="users")
 
 urlpatterns = [
     # JWT Authentication endpoints

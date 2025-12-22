@@ -4,13 +4,15 @@ import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { PageHeader } from "@/shared/components/ui/PageHeader";
+import { useAuthStore } from "@/shared/store/authStore";
 
-const TABS = [
+const ALL_TABS = [
   { href: "/catalog/equipment", label: "Техника" },
   { href: "/catalog/services", label: "Услуги" },
   { href: "/catalog/materials", label: "Материалы" },
   { href: "/catalog/attachments", label: "Навески" },
   { href: "/catalog/clients", label: "Клиенты" },
+  { href: "/catalog/operators", label: "Операторы", adminOnly: true },
 ];
 
 export default function CatalogLayout({
@@ -19,6 +21,11 @@ export default function CatalogLayout({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const user = useAuthStore((state) => state.user);
+  const isAdmin = user?.role === "admin";
+
+  // Фильтруем вкладки: показываем операторов только админу
+  const TABS = ALL_TABS.filter((tab) => !tab.adminOnly || isAdmin);
 
   return (
     <section className="catalog-scope space-y-4">

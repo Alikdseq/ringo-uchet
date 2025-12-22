@@ -1,6 +1,7 @@
 "use client";
 
 import React, { FormEvent, useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/shared/store/authStore";
 import type { LoginRequest } from "@/shared/types/auth";
@@ -122,6 +123,18 @@ export default function LoginPage() {
             {isLoading ? "Входим..." : "Войти"}
           </button>
         </form>
+
+        <div className="mt-6 border-t border-slate-200 pt-6 text-center">
+          <p className="mb-3 text-xs text-slate-500">
+            Нет аккаунта?
+          </p>
+          <Link
+            href="/register"
+            className="inline-flex items-center justify-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50"
+          >
+            Зарегистрироваться
+          </Link>
+        </div>
       </div>
     </main>
   );

@@ -15,6 +15,7 @@ class UserSerializer(serializers.ModelSerializer):
 
     role_display = serializers.CharField(source="get_role_display", read_only=True)
     full_name = serializers.SerializerMethodField()
+    password = serializers.CharField(write_only=True, required=False, help_text="Пароль (только при создании)")
 
     class Meta:
         model = User
@@ -33,11 +34,34 @@ class UserSerializer(serializers.ModelSerializer):
             "position",
             "is_active",
             "date_joined",
+            "password",
         ]
-        read_only_fields = ["id", "date_joined", "is_active"]
+        read_only_fields = ["id", "date_joined"]
 
     def get_full_name(self, obj):
         return obj.get_full_name() or obj.username or obj.email or str(obj.id)
+    
+    def create(self, validated_data):
+        """Создание пользователя с хешированием пароля"""
+        password = validated_data.pop("password", None)
+        # Если username не указан, используем phone
+        if "username" not in validated_data or not validated_data.get("username"):
+            validated_data["username"] = validated_data.get("phone") or f"user_{validated_data.get('phone', 'unknown')}"
+        user = User.objects.create(**validated_data)
+        if password:
+            user.set_password(password)
+            user.save()
+        return user
+    
+    def update(self, instance, validated_data):
+        """Обновление пользователя с возможностью изменения пароля"""
+        password = validated_data.pop("password", None)
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        if password:
+            instance.set_password(password)
+        instance.save()
+        return instance
 
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
