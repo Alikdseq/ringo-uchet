@@ -89,6 +89,7 @@ export default function OrderDetailPage() {
   const {
     data: order,
     isLoading,
+    isFetching,
     isError,
     error,
     refetch,
@@ -96,6 +97,14 @@ export default function OrderDetailPage() {
     queryKey: ["order", orderId],
     enabled: Boolean(orderId),
     queryFn: () => OrdersApi.get(orderId as string),
+    // Автоматическое обновление каждые 3 секунды для real-time синхронизации
+    refetchInterval: 3000,
+    // Данные считаются свежими 2 секунды
+    staleTime: 2000,
+    // Используем предыдущие данные во время обновления (без мерцаний)
+    placeholderData: (previousData) => previousData,
+    // Не показываем loading при background refetch - только data и error триггерят ререндер
+    notifyOnChangeProps: ["data", "error"],
   });
 
   // Проверяем, является ли текущий пользователь оператором этой заявки
@@ -114,12 +123,33 @@ export default function OrderDetailPage() {
       const updated = await OrdersApi.changeStatus(orderId, payload);
       return updated;
     },
+    // Optimistic update для мгновенного отображения изменений
+    onMutate: async (payload) => {
+      // Отменяем исходящие запросы для избежания конфликтов
+      await queryClient.cancelQueries({ queryKey: ["order", orderId] });
+      
+      // Сохраняем предыдущее значение для отката
+      const previousOrder = queryClient.getQueryData<Order>(["order", orderId]);
+      
+      // Оптимистично обновляем заявку
+      if (previousOrder && orderId) {
+        const optimisticOrder: Order = {
+          ...previousOrder,
+          status: payload.status,
+          updatedAt: new Date(),
+        };
+        queryClient.setQueryData<Order>(["order", orderId], optimisticOrder);
+      }
+      
+      return { previousOrder };
+    },
     onSuccess: async (updated) => {
       if (orderId && updated) {
-        // Немедленно обновляем кэш заявки
+        // Немедленно обновляем кэш заявки актуальными данными
         queryClient.setQueryData<Order>(["order", orderId], updated);
         queryClient.setQueryData<Order>(["order-complete", orderId], updated);
-        // Инвалидируем списки и отчёты в фоне (для всех пользователей, включая операторов)
+        queryClient.setQueryData<Order>(["order-edit", orderId], updated);
+        // Инвалидируем списки и отчёты в фоне для мгновенной синхронизации
         void queryClient.invalidateQueries({ queryKey: ["orders"] });
         void queryClient.invalidateQueries({ queryKey: ["reports"] });
         void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
@@ -131,6 +161,17 @@ export default function OrderDetailPage() {
       setNextStatus("");
       // Перенаправляем на список заявок после успешного изменения статуса
       router.replace("/orders");
+    },
+    onError: (err: unknown, _variables, context) => {
+      // Откатываем optimistic update при ошибке
+      if (context?.previousOrder && orderId) {
+        queryClient.setQueryData<Order>(["order", orderId], context.previousOrder);
+      }
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Не удалось изменить статус, попробуйте позже";
+      setStatusError(message);
     },
     onError: (err: unknown) => {
       const message =
@@ -322,18 +363,19 @@ export default function OrderDetailPage() {
             ) : null}
             <button
               type="button"
-              disabled={isLoading}
+              disabled={isFetching}
               onClick={() => {
                 void refetch();
               }}
               className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              Обновить
+              {isFetching ? "Обновление..." : "Обновить"}
             </button>
           </div>
         }
       />
 
+      {/* Показываем skeleton только при первой загрузке, не при background refetch */}
       {isLoading && !order ? <OrderDetailSkeleton /> : null}
 
       {errorMessage ? (

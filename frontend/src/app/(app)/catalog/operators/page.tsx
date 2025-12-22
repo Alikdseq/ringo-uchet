@@ -1,13 +1,14 @@
 "use client";
 
 import React, { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { UsersApi } from "@/shared/api/usersApi";
 import type { UserInfo } from "@/shared/types/auth";
 import { Card } from "@/shared/components/ui/Card";
 import { RoleGuard } from "@/shared/components/auth/RoleGuard";
 
 export default function OperatorsCatalogPage() {
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [isCreating, setIsCreating] = useState(false);
   const [firstName, setFirstName] = useState("");
@@ -39,8 +40,15 @@ export default function OperatorsCatalogPage() {
         role: "operator",
         search: search || undefined,
       }),
-    staleTime: 5 * 60_000,
-    refetchOnWindowFocus: false,
+    // Автоматическое обновление каждые 5 секунд для real-time синхронизации
+    refetchInterval: 5000,
+    // Данные считаются свежими 3 секунды
+    staleTime: 3000,
+    refetchOnWindowFocus: true,
+    // Используем предыдущие данные во время обновления (без мерцаний)
+    placeholderData: (previousData) => previousData,
+    // Не показываем loading при background refetch
+    notifyOnChangeProps: ["data", "error"],
   });
 
   const items = data ?? [];
@@ -103,6 +111,9 @@ export default function OperatorsCatalogPage() {
 
       await UsersApi.updateUser(editingId, payload);
       cancelEdit();
+      // Инвалидируем все запросы операторов для мгновенного обновления
+      void queryClient.invalidateQueries({ queryKey: ["catalog", "operators"] });
+      void queryClient.invalidateQueries({ queryKey: ["users"] });
       await refetch();
     } catch (err) {
       const message =
@@ -130,6 +141,9 @@ export default function OperatorsCatalogPage() {
         cancelEdit();
       }
       setOperatorToDelete(null);
+      // Инвалидируем все запросы операторов для мгновенного обновления
+      void queryClient.invalidateQueries({ queryKey: ["catalog", "operators"] });
+      void queryClient.invalidateQueries({ queryKey: ["users"] });
       await refetch();
     } catch (err) {
       const message =
@@ -175,6 +189,9 @@ export default function OperatorsCatalogPage() {
       setPhone("");
       setEmail("");
       setPassword("");
+      // Инвалидируем все запросы операторов для мгновенного обновления
+      void queryClient.invalidateQueries({ queryKey: ["catalog", "operators"] });
+      void queryClient.invalidateQueries({ queryKey: ["users"] });
       await refetch();
     } catch (err) {
       const message =

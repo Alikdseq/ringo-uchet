@@ -59,6 +59,14 @@ function useOrdersData(filters: OrdersListFilters) {
         page: filters.page,
         pageSize: PAGE_SIZE,
       }),
+    // Автоматическое обновление каждые 5 секунд для real-time синхронизации
+    refetchInterval: 5000,
+    // Данные считаются свежими 3 секунды
+    staleTime: 3000,
+    // Используем предыдущие данные во время обновления (без мерцаний)
+    placeholderData: (previousData) => previousData,
+    // Не показываем loading при background refetch
+    notifyOnChangeProps: ["data", "error"],
   });
 
   return { ...queryResult, debouncedSearch };
@@ -312,7 +320,8 @@ export default function OrdersPage() {
       ) : null}
 
       <div className="space-y-2">
-        {isLoading && filteredOrdersForRole.length === 0 ? (
+        {/* Показываем loading только при первой загрузке, не при background refetch */}
+        {isLoading && !data && filteredOrdersForRole.length === 0 ? (
           <div className="rounded-md border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-xs text-slate-500">
             Загружаем список заявок...
           </div>

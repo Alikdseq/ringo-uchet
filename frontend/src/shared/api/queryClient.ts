@@ -13,9 +13,24 @@ export const queryClient = new QueryClient({
         return true;
       },
       // Общий staleTime, для справочников он будет увеличен на уровне отдельных хуков
-      staleTime: 60_000,
-      // Чтобы не дергать лишние рефетчи при каждом фокусе окна
-      refetchOnWindowFocus: false,
+      staleTime: 30_000, // 30 секунд - данные считаются свежими
+      // Включаем refetch при фокусе окна для real-time обновлений
+      refetchOnWindowFocus: true,
+      // Включаем refetch при переподключении сети
+      refetchOnReconnect: true,
+      // Включаем refetch при монтировании (если данные устарели)
+      refetchOnMount: true,
+      // Используем предыдущие данные во время обновления для плавности (без мерцаний)
+      placeholderData: (previousData) => previousData,
+      // Не показываем loading состояние при background refetch
+      notifyOnChangeProps: ["data", "error"],
+    },
+    mutations: {
+      // При мутациях автоматически инвалидируем связанные запросы
+      onSettled: () => {
+        // Инвалидируем все связанные запросы после любой мутации
+        void queryClient.invalidateQueries();
+      },
     },
   },
 });
