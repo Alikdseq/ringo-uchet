@@ -39,7 +39,12 @@ SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 SECURE_HSTS_PRELOAD = True
 SESSION_COOKIE_SECURE = True
 CSRF_COOKIE_SECURE = True
-SECURE_SSL_REDIRECT = True
+# Behind nginx TLS termination: keep False so internal healthchecks on :8000 work.
+# Nginx already redirects HTTP→HTTPS. Set DJANGO_SECURE_SSL_REDIRECT=true only if needed.
+SECURE_SSL_REDIRECT = (
+    __import__("os").environ.get("DJANGO_SECURE_SSL_REDIRECT", "false").lower()
+    in ("1", "true", "yes")
+)
 
 LOGGING["root"]["level"] = "WARNING"  # type: ignore
 

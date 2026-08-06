@@ -3,14 +3,20 @@
 # Первый запуск (HTTP, до SSL):
 #   cp .env.prod.example .env.prod   # заполнить секреты
 #   export NGINX_CONF=prod-init.conf
-#   docker compose -f docker-compose.prod.yml up -d --build
+#   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
 #
 # После certbot (HTTPS):
 #   export NGINX_CONF=prod.conf
-#   docker compose -f docker-compose.prod.yml up -d nginx
+#   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d nginx
+#
+# Важно: пароль Postgres задаётся ТОЛЬКО при первом создании volume.
+# Если меняли POSTGRES_PASSWORD после первого up — сбросьте volume:
+#   docker compose -f docker-compose.prod.yml --env-file .env.prod down
+#   docker volume rm ringo-prod_pgdata
 
 name: ringo-prod
 
+# Общий env для Django/Celery. Пароль БД — только POSTGRES_PASSWORD из .env.prod
 x-django-env: &django-env
   DJANGO_SETTINGS_MODULE: ringo_backend.settings.prod
   DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY}
@@ -18,11 +24,12 @@ x-django-env: &django-env
   CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-https://ringoouchet.ru,https://www.ringoouchet.ru,http://ringoouchet.ru,http://www.ringoouchet.ru,http://89.169.38.5}
   CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-https://ringoouchet.ru,https://www.ringoouchet.ru}
   CORS_ALLOW_ALL_ORIGINS: ${CORS_ALLOW_ALL_ORIGINS:-true}
+  DJANGO_SECURE_SSL_REDIRECT: ${DJANGO_SECURE_SSL_REDIRECT:-false}
   POSTGRES_HOST: db
-  POSTGRES_PORT: 5432
-  POSTGRES_DB: ${DB_NAME:-ringo_prod}
-  POSTGRES_USER: ${DB_USER:-ringo_user}
-  POSTGRES_PASSWORD: ${DB_PASSWORD}
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: ${POSTGRES_DB:-ringo_prod}
+  POSTGRES_USER: ${POSTGRES_USER:-ringo_user}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
   CELERY_BROKER_URL: redis://redis:6379/0
   CELERY_RESULT_BACKEND: redis://redis:6379/0
   AWS_S3_ENDPOINT_URL: http://minio:9000
@@ -37,16 +44,17 @@ services:
     image: postgres:15-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${DB_NAME:-ringo_prod}
-      POSTGRES_USER: ${DB_USER:-ringo_user}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-ringo_prod}
+      POSTGRES_USER: ${POSTGRES_USER:-ringo_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-ringo_user}"]
-      interval: 10s
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 10s
     networks:
       - ringo-net
 
@@ -92,15 +100,8 @@ services:
     volumes:
       - ./backend/staticfiles:/app/staticfiles
       - ./backend/media:/app/media
-    command: >
-      sh -c "python manage.py migrate --noinput &&
-             python manage.py collectstatic --noinput &&
-             gunicorn ringo_backend.wsgi:application
-             --bind 0.0.0.0:8000
-             --workers 2
-             --timeout 120
-             --access-logfile -
-             --error-logfile -"
+      - ./backend/scripts/entrypoint-prod.sh:/entrypoint-prod.sh:ro
+    entrypoint: ["/bin/sh", "/entrypoint-prod.sh"]
     depends_on:
       db:
         condition: service_healthy
@@ -114,10 +115,10 @@ services:
           "-c",
           "import urllib.request; r=urllib.request.urlopen('http://127.0.0.1:8000/api/health/', timeout=5); assert r.getcode()==200",
         ]
-      interval: 30s
+      interval: 15s
       timeout: 10s
-      retries: 5
-      start_period: 60s
+      retries: 8
+      start_period: 90s
     networks:
       - ringo-net
 
@@ -205,10 +206,20 @@ services:
     volumes:
       - certbot_www:/var/www/certbot
       - letsencrypt:/etc/letsencrypt
-    entrypoint: >
-      certbot certonly --webroot -w /var/www/certbot
-      -d ringoouchet.ru -d www.ringoouchet.ru
-      --email admin@ringoouchet.ru --agree-tos --no-eff-email
+    entrypoint:
+      - certbot
+      - certonly
+      - --webroot
+      - -w
+      - /var/www/certbot
+      - -d
+      - ringoouchet.ru
+      - -d
+      - www.ringoouchet.ru
+      - --email
+      - admin@ringoouchet.ru
+      - --agree-tos
+      - --no-eff-email
 
 volumes:
   pgdata:

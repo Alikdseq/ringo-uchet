@@ -49,8 +49,35 @@ nano .env.prod
 
 Обязательно смените:
 - `DJANGO_SECRET_KEY`
-- `DB_PASSWORD` / `POSTGRES_PASSWORD`
+- `POSTGRES_PASSWORD` (один пароль для Postgres и Django)
 - `MINIO_ROOT_PASSWORD` / `AWS_SECRET_ACCESS_KEY`
+
+В `.env.prod` должен быть **только** `POSTGRES_PASSWORD` (не разные `DB_PASSWORD` и `POSTGRES_PASSWORD`).
+
+---
+
+## 3.1. Если ошибка: password authentication failed
+
+Postgres запоминает пароль **только при первом создании** volume `ringo-prod_pgdata`.
+Если пароль в `.env.prod` меняли после первого `up` — Django и БД расходятся.
+
+На **новом** сервере без нужных данных можно сбросить volume:
+
+```bash
+cd /opt/ringo-uchet
+docker compose -f docker-compose.prod.yml --env-file .env.prod down
+docker volume rm ringo-prod_pgdata
+# проверьте .env.prod: POSTGRES_PASSWORD=... (один пароль)
+docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+```
+
+Если данные уже нужны — смените пароль внутри Postgres на тот же, что в `.env.prod`:
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env.prod exec -e PGPASSWORD=СТАРЫЙ_ПАРОЛЬ db \
+  psql -U ringo_user -d ringo_prod \
+  -c "ALTER USER ringo_user WITH PASSWORD 'НОВЫЙ_ПАРОЛЬ_ИЗ_ENV';"
+```
 
 ---
 
