@@ -58,25 +58,35 @@ nano .env.prod
 
 ## 3.1. Если ошибка: password authentication failed
 
-Postgres запоминает пароль **только при первом создании** volume `ringo-prod_pgdata`.
-Если пароль в `.env.prod` меняли после первого `up` — Django и БД расходятся.
+### Корень (исправлено в коде)
+Старый Windows-хак выставлял `PGPASSWORD=''` и URL-кодировал пароль (`!!` → `%21%21`).
+На Linux libpq/psycopg2 из‑за этого слал **неверный** пароль, хотя в `env` был правильный `POSTGRES_PASSWORD`.
 
-На **новом** сервере без нужных данных можно сбросить volume:
+### На сервере после `git pull`
+
+1. В `.env.prod` используйте пароль **без** `! # $ \`` (или в кавычках).
+2. Имена переменных Django: `DJANGO_SECRET_KEY`, `DJANGO_ALLOWED_HOSTS` (не `SECRET_KEY` / `ALLOWED_HOSTS`).
+3. Сбросьте volume БД (если данных ещё нет) и пересоберите:
 
 ```bash
 cd /opt/ringo-uchet
-docker compose -f docker-compose.prod.yml --env-file .env.prod down
-docker volume rm ringo-prod_pgdata
-# проверьте .env.prod: POSTGRES_PASSWORD=... (один пароль)
+git pull
+# отредактируйте .env.prod — POSTGRES_PASSWORD без спецсимволов
+docker compose -f docker-compose.prod.yml --env-file .env.prod down -v
 docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+docker compose -f docker-compose.prod.yml --env-file .env.prod logs -f django-api
 ```
 
-Если данные уже нужны — смените пароль внутри Postgres на тот же, что в `.env.prod`:
-
+Проверка подключения:
 ```bash
-docker compose -f docker-compose.prod.yml --env-file .env.prod exec -e PGPASSWORD=СТАРЫЙ_ПАРОЛЬ db \
-  psql -U ringo_user -d ringo_prod \
-  -c "ALTER USER ringo_user WITH PASSWORD 'НОВЫЙ_ПАРОЛЬ_ИЗ_ENV';"
+docker compose -f docker-compose.prod.yml --env-file .env.prod run --rm --entrypoint python django-api -c "
+import os, django
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'ringo_backend.settings.prod')
+django.setup()
+from django.db import connection
+connection.ensure_connection()
+print('DB OK', connection.settings_dict['USER'], connection.settings_dict['HOST'])
+"
 ```
 
 ---

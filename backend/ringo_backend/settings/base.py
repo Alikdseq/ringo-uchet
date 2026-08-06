@@ -88,39 +88,17 @@ TEMPLATES = [
 WSGI_APPLICATION = "ringo_backend.wsgi.application"
 ASGI_APPLICATION = "ringo_backend.asgi.application"
 
-# Исправление проблемы с UnicodeDecodeError в psycopg2 на Windows
-# libpq (C библиотека PostgreSQL) читает системные переменные Windows напрямую
-# через Windows API, что вызывает проблемы когда USERNAME/USERPROFILE содержат кириллицу.
-# Используем DATABASE_URL для полного обхода проблемы с системными переменными.
+# Database configuration
+# IMPORTANT: Do NOT set PGPASSWORD='' — libpq treats empty PGPASSWORD as the
+# real password. Windows Cyrillic workaround is win32-only in __init__/manage.
 import os
-import urllib.parse
 
-# Очищаем переменные окружения PostgreSQL, чтобы libpq не читал системные переменные
-_postgres_env_vars = ['PGHOST', 'PGUSER', 'PGPASSWORD', 'PGDATABASE', 'PGPORT', 'PGPASSFILE']
-for var in _postgres_env_vars:
-    os.environ[var] = ''
+db_name = os.environ.get("POSTGRES_DB") or os.environ.get("DB_NAME") or "ringo"
+db_user = os.environ.get("POSTGRES_USER") or os.environ.get("DB_USER") or "ringo"
+db_password = os.environ.get("POSTGRES_PASSWORD") or os.environ.get("DB_PASSWORD") or "ringo"
+db_host = os.environ.get("POSTGRES_HOST") or os.environ.get("DB_HOST") or "db"
+db_port = os.environ.get("POSTGRES_PORT") or os.environ.get("DB_PORT") or "5432"
 
-# Получаем параметры подключения
-db_name = os.environ.get("POSTGRES_DB", "ringo")
-db_user = os.environ.get("POSTGRES_USER", "ringo")
-db_password = os.environ.get("POSTGRES_PASSWORD", "ringo")
-db_host = os.environ.get("POSTGRES_HOST", "db")
-db_port = os.environ.get("POSTGRES_PORT", "5432")
-
-# Кодируем параметры для URL (безопасная обработка специальных символов)
-db_user_encoded = urllib.parse.quote(str(db_user), safe='')
-db_password_encoded = urllib.parse.quote(str(db_password), safe='')
-db_host_encoded = urllib.parse.quote(str(db_host), safe='')
-db_name_encoded = urllib.parse.quote(str(db_name), safe='')
-
-# Формируем DATABASE_URL - это обходит проблему с системными переменными Windows
-database_url = f"postgresql://{db_user_encoded}:{db_password_encoded}@{db_host_encoded}:{db_port}/{db_name_encoded}"
-
-# Устанавливаем DATABASE_URL - Django автоматически использует его если он установлен
-os.environ['DATABASE_URL'] = database_url
-
-# Настройки базы данных
-# Django будет использовать DATABASE_URL если он установлен, иначе параметры ниже
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
