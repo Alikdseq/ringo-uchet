@@ -74,6 +74,7 @@ function OrderEditPageContent() {
   const user = useAuthStore((state) => state.user);
   const role = user?.role;
   const isOperator = role === "operator";
+  const isAdmin = role === "admin";
 
   const { data: order, isLoading, refetch } = useQuery({
     queryKey: ["order-edit", orderId],
@@ -447,7 +448,11 @@ function OrderEditPageContent() {
           nextStatus: "IN_PROGRESS",
         };
       case "IN_PROGRESS":
-        return { label: "Завершить", type: "complete" };
+        // Завершение — только админ (бэкенд /complete/ тоже admin-only)
+        if (isAdmin) {
+          return { label: "Завершить", type: "complete" };
+        }
+        return null;
       default:
         return null;
     }
