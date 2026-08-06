@@ -1,4 +1,5 @@
 import type { UserInfo } from "@/shared/types/auth";
+import { mapUserInfoFromApi } from "@/shared/utils/userDisplay";
 import type { MaybePaginated } from "@/shared/api/types";
 
 export type OrderStatus =
@@ -314,11 +315,8 @@ export function mapOrderFromApi(payload: unknown): Order {
     if (typeof managerRaw === "number") {
       managerId = managerRaw;
     } else {
-      manager = managerRaw as UserInfo;
-      managerId =
-        typeof (managerRaw as { id?: unknown }).id === "number"
-          ? ((managerRaw as { id?: number }).id as number)
-          : null;
+      manager = mapUserInfoFromApi(managerRaw);
+      managerId = manager?.id ?? null;
     }
   } else if (typeof raw.manager_id === "number") {
     managerId = raw.manager_id as number;
@@ -331,11 +329,8 @@ export function mapOrderFromApi(payload: unknown): Order {
     if (typeof operatorRaw === "number") {
       operatorId = operatorRaw;
     } else {
-      operator = operatorRaw as UserInfo;
-      operatorId =
-        typeof (operatorRaw as { id?: unknown }).id === "number"
-          ? ((operatorRaw as { id?: number }).id as number)
-          : null;
+      operator = mapUserInfoFromApi(operatorRaw);
+      operatorId = operator?.id ?? null;
     }
   } else if (typeof raw.operator_id === "number") {
     operatorId = raw.operator_id as number;
@@ -345,22 +340,19 @@ export function mapOrderFromApi(payload: unknown): Order {
     ? (raw.operators as unknown[])
     : null;
   const operators = operatorsRaw
-    ? (operatorsRaw.filter(
-        (op) => op && typeof op === "object",
-      ) as UserInfo[])
+    ? operatorsRaw
+        .map((op) => mapUserInfoFromApi(op))
+        .filter((op): op is UserInfo => op != null)
     : null;
 
   const operatorIds = Array.isArray(raw.operator_ids)
     ? (raw.operator_ids as unknown[])
         .map((v) => (typeof v === "number" ? v : null))
         .filter((v): v is number => v !== null)
-    : null;
+    : operators?.map((op) => op.id) ?? null;
 
   const createdByRaw = raw.created_by;
-  const createdBy =
-    createdByRaw && typeof createdByRaw === "object"
-      ? (createdByRaw as UserInfo)
-      : null;
+  const createdBy = mapUserInfoFromApi(createdByRaw);
 
   const prepaymentAmount = parseNumber(raw.prepayment_amount, 0);
   const totalAmount = parseNumber(raw.total_amount, 0);

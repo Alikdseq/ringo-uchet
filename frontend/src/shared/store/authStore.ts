@@ -19,19 +19,40 @@ export interface AuthState {
   refreshToken: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  /** true пока читаем localStorage и пробуем авто-вход */
+  isBootstrapping: boolean;
   error: string | null;
   savedCredentials: SavedCredentials | null;
+  lastLoginIp: string | null;
   login: (payload: LoginRequest) => Promise<void>;
   logout: (options?: { clearSavedCredentials?: boolean }) => Promise<void>;
   tryAutoLogin: () => Promise<void>;
   refreshTokenSafe: () => Promise<RefreshTokenResponse | null>;
   loadCurrentUser: () => Promise<void>;
+  setBootstrapping: (value: boolean) => void;
 }
 
 type PersistedAuthSlice = Pick<
   AuthState,
-  "user" | "accessToken" | "refreshToken" | "savedCredentials"
+  "user" | "accessToken" | "refreshToken" | "savedCredentials" | "lastLoginIp"
 >;
+
+async function detectClientIp(): Promise<string | null> {
+  if (typeof window === "undefined") return null;
+  try {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), 2500);
+    const res = await fetch("https://api.ipify.org?format=json", {
+      signal: controller.signal,
+    });
+    window.clearTimeout(timer);
+    if (!res.ok) return null;
+    const data = (await res.json()) as { ip?: string };
+    return typeof data.ip === "string" ? data.ip : null;
+  } catch {
+    return null;
+  }
+}
 
 export const useAuthStore = create<AuthState>()(
   persist(
@@ -41,8 +62,14 @@ export const useAuthStore = create<AuthState>()(
       refreshToken: null,
       isAuthenticated: false,
       isLoading: false,
+      isBootstrapping: true,
       error: null,
       savedCredentials: null,
+      lastLoginIp: null,
+
+      setBootstrapping(value: boolean) {
+        set({ isBootstrapping: value });
+      },
 
       async login(payload: LoginRequest): Promise<void> {
         set({ isLoading: true, error: null });
@@ -54,12 +81,16 @@ export const useAuthStore = create<AuthState>()(
           const identifier =
             payload.phone ?? payload.email ?? payload.username ?? "";
 
+          const clientIp = await detectClientIp();
+
           // 2. Сохраняем токены и базовое состояние авторизации
+          // (пароль — для авто-входа на этом устройстве после истечения refresh)
           set({
             accessToken: access,
             refreshToken: refresh,
             isAuthenticated: true,
             error: null,
+            lastLoginIp: clientIp,
             savedCredentials: identifier
               ? {
                   identifier,
@@ -75,6 +106,7 @@ export const useAuthStore = create<AuthState>()(
             user: currentUser,
             isLoading: false,
             isAuthenticated: true,
+            isBootstrapping: false,
           });
         } catch (e) {
           const message =
@@ -86,6 +118,7 @@ export const useAuthStore = create<AuthState>()(
             isLoading: false,
             error: message,
             isAuthenticated: false,
+            isBootstrapping: false,
           });
           throw e;
         }
@@ -94,7 +127,7 @@ export const useAuthStore = create<AuthState>()(
       async logout(options?: {
         clearSavedCredentials?: boolean;
       }): Promise<void> {
-        const { refreshToken, savedCredentials } = get();
+        const { refreshToken, savedCredentials, lastLoginIp } = get();
         try {
           if (refreshToken) {
             await AuthApi.logout(refreshToken);
@@ -108,10 +141,12 @@ export const useAuthStore = create<AuthState>()(
           refreshToken: null,
           isAuthenticated: false,
           isLoading: false,
+          isBootstrapping: false,
           error: null,
           savedCredentials: options?.clearSavedCredentials
             ? null
             : savedCredentials,
+          lastLoginIp: options?.clearSavedCredentials ? null : lastLoginIp,
         });
       },
 
@@ -166,6 +201,7 @@ export const useAuthStore = create<AuthState>()(
       async tryAutoLogin(): Promise<void> {
         // На сервере авто-логин не выполняем
         if (typeof window === "undefined") {
+          set({ isBootstrapping: false });
           return;
         }
 
@@ -175,10 +211,11 @@ export const useAuthStore = create<AuthState>()(
         // Если в рамках текущей сессии уже есть accessToken и флаг авторизации,
         // авто-логин не нужен.
         if (isAuthenticated && accessToken) {
+          set({ isBootstrapping: false, isLoading: false });
           return;
         }
 
-        set({ isLoading: true, error: null });
+        set({ isLoading: true, error: null, isBootstrapping: true });
 
         // 1) Пытаемся обновить access по refresh-токену
         if (refreshToken) {
@@ -189,6 +226,7 @@ export const useAuthStore = create<AuthState>()(
               set({
                 isAuthenticated: true,
                 isLoading: false,
+                isBootstrapping: false,
               });
             } catch {
               // Если не удалось подтянуть пользователя, считаем сессию
@@ -200,13 +238,16 @@ export const useAuthStore = create<AuthState>()(
                 isAuthenticated: false,
                 isLoading: false,
               });
+              // fall through to saved credentials
             }
-            return;
+            if (get().isAuthenticated) {
+              return;
+            }
           }
         }
 
         // 2) Если refresh не сработал или его нет — пробуем авто-логин
-        // по сохранённым учётным данным (телефон/email + пароль)
+        // по сохранённым учётным данным (телефон/email + пароль) на этом устройстве
         if (savedCredentials?.identifier && savedCredentials.password) {
           const trimmed = savedCredentials.identifier.trim();
           const payload: LoginRequest = {
@@ -223,8 +264,7 @@ export const useAuthStore = create<AuthState>()(
 
           try {
             await get().login(payload);
-            // login сам выставляет isAuthenticated и isLoading
-            set({ isLoading: false });
+            set({ isLoading: false, isBootstrapping: false });
             return;
           } catch {
             // Если авто-логин не удался (пароль изменили и т.п.), оставляем
@@ -232,6 +272,7 @@ export const useAuthStore = create<AuthState>()(
             set({
               isLoading: false,
               isAuthenticated: false,
+              isBootstrapping: false,
             });
             return;
           }
@@ -241,6 +282,7 @@ export const useAuthStore = create<AuthState>()(
         set({
           isLoading: false,
           isAuthenticated: false,
+          isBootstrapping: false,
         });
       },
     }),
@@ -255,7 +297,11 @@ export const useAuthStore = create<AuthState>()(
         accessToken: state.accessToken,
         refreshToken: state.refreshToken,
         savedCredentials: state.savedCredentials,
+        lastLoginIp: state.lastLoginIp,
       }),
+      onRehydrateStorage: () => () => {
+        // hydration finished — AuthBootstrap вызовет tryAutoLogin
+      },
     },
   ),
 );

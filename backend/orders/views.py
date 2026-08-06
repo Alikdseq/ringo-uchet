@@ -72,7 +72,34 @@ class OrderViewSet(viewsets.ModelViewSet):
     queryset = Order.objects.select_related("client", "manager", "operator").prefetch_related("items", "status_logs")
     serializer_class = OrderSerializer
     permission_classes = [IsOwnerOrManager]
-    
+
+    def create(self, request, *args, **kwargs):
+        user = request.user
+        if getattr(user, "role", None) == "operator" and not user.is_superuser:
+            return Response(
+                {"detail": "Оператор не может создавать заявки"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        return super().create(request, *args, **kwargs)
+
+    def update(self, request, *args, **kwargs):
+        user = request.user
+        if getattr(user, "role", None) == "operator" and not user.is_superuser:
+            return Response(
+                {"detail": "Оператор не может редактировать заявки"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        return super().update(request, *args, **kwargs)
+
+    def partial_update(self, request, *args, **kwargs):
+        user = request.user
+        if getattr(user, "role", None) == "operator" and not user.is_superuser:
+            return Response(
+                {"detail": "Оператор не может редактировать заявки"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        return super().partial_update(request, *args, **kwargs)
+
     def perform_update(self, serializer: OrderSerializer) -> None:
         """Обработка обновления заявки с логированием ошибок"""
         try:
@@ -181,6 +208,22 @@ class OrderViewSet(viewsets.ModelViewSet):
         serializer = OrderStatusSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         target_status = serializer.validated_data["status"]
+        user = request.user
+
+        # Оператор может только перевести свою заявку APPROVED → IN_PROGRESS
+        if getattr(user, "role", None) == "operator" and not user.is_superuser:
+            is_assigned = order.operators.filter(id=user.id).exists() or order.operator_id == user.id
+            if not is_assigned:
+                return Response(
+                    {"detail": "Недостаточно прав: заявка не назначена вам"},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+            if not (order.status == OrderStatus.APPROVED and target_status == OrderStatus.IN_PROGRESS):
+                return Response(
+                    {"detail": "Оператор может только начать работу по одобренной заявке"},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
         try:
             self._validate_status_transition(order.status, target_status)
         except ValueError as exc:
@@ -305,6 +348,14 @@ class OrderViewSet(viewsets.ModelViewSet):
     def complete_order(self, request, pk=None):
         """Завершает заявку с добавлением элементов номенклатуры и расчетом стоимости."""
         order = self.get_object()
+        user = request.user
+
+        # Завершать заявку может только администратор
+        if not (getattr(user, "role", None) == "admin" or user.is_superuser):
+            return Response(
+                {"detail": "Завершить заявку может только администратор"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         
         # Проверяем, что заявка в статусе IN_PROGRESS
         if order.status != OrderStatus.IN_PROGRESS:

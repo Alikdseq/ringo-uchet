@@ -12,11 +12,25 @@ export function AuthBootstrap({ children }: AuthBootstrapProps) {
   const tryAutoLogin = useAuthStore((state) => state.tryAutoLogin);
   const initializedRef = useRef(false);
 
-  // Инициализация сессии (авто-логин по сохранённым токенам)
+  // Ждём rehydrate localStorage, затем восстанавливаем сессию
   useEffect(() => {
     if (initializedRef.current) return;
     initializedRef.current = true;
-    void tryAutoLogin();
+
+    const run = () => {
+      void tryAutoLogin();
+    };
+
+    const persistApi = useAuthStore.persist;
+    if (persistApi.hasHydrated()) {
+      run();
+      return;
+    }
+
+    const unsub = persistApi.onFinishHydration(() => {
+      run();
+    });
+    return unsub;
   }, [tryAutoLogin]);
 
   // Проброс access-токена в httpClient (Authorization: Bearer ...)
@@ -29,10 +43,8 @@ export function AuthBootstrap({ children }: AuthBootstrapProps) {
       }
     };
 
-    // Инициализируем заголовок при монтировании
     applyToken(useAuthStore.getState().accessToken);
 
-    // И подписываемся на дальнейшие изменения токена
     const unsubscribe = useAuthStore.subscribe((state) => {
       applyToken(state.accessToken);
     });
@@ -42,5 +54,3 @@ export function AuthBootstrap({ children }: AuthBootstrapProps) {
 
   return <>{children}</>;
 }
-
-

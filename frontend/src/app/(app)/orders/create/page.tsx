@@ -14,6 +14,8 @@ import { httpClient, AppError } from "@/shared/api/httpClient";
 import { CatalogApi } from "@/shared/api/catalogApi";
 import type { Equipment, MaterialItem, ServiceItem } from "@/shared/types/catalog";
 import type { OrderRequestPayload } from "@/shared/api/ordersApi";
+import { RoleGuard } from "@/shared/components/auth/RoleGuard";
+import { formatUserDisplayName } from "@/shared/utils/userDisplay";
 
 type ClientListItem = ClientInfo;
 const ORDER_DRAFT_STORAGE_KEY = "order-create-draft-v1";
@@ -36,6 +38,14 @@ function formatCurrency(value: number): string {
 }
 
 export default function OrderCreatePage() {
+  return (
+    <RoleGuard allowedRoles={["admin", "manager"]} redirectTo="/orders">
+      <OrderCreatePageContent />
+    </RoleGuard>
+  );
+}
+
+function OrderCreatePageContent() {
   const router = useRouter();
   const queryClient = useQueryClient();
 
@@ -583,10 +593,10 @@ export default function OrderCreatePage() {
         status,
       };
 
-      if (explicitOperatorIds.length === 1) {
-        payload.operator_id = explicitOperatorIds[0];
-      } else if (explicitOperatorIds.length > 1) {
+      // M2M operators + legacy operator_id всегда вместе — иначе у оператора 403 на карточке
+      if (explicitOperatorIds.length > 0) {
         payload.operator_ids = explicitOperatorIds;
+        payload.operator_id = explicitOperatorIds[0];
       }
 
       if (hasItems && payloadItems) {
@@ -806,11 +816,7 @@ export default function OrderCreatePage() {
             <div className="grid gap-2 md:grid-cols-2">
               {operators.map((operator) => {
                 const checked = operatorIds.includes(operator.id);
-                const name =
-                  `${operator.firstName ?? ""} ${operator.lastName ?? ""}`.trim() ||
-                  operator.fullNameFromApi ||
-                  operator.username ||
-                  `Оператор #${operator.id}`;
+                const name = formatUserDisplayName(operator);
 
                 return (
                   <label

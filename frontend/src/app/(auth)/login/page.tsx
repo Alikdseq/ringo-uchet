@@ -10,18 +10,27 @@ export default function LoginPage() {
   const router = useRouter();
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const isLoading = useAuthStore((state) => state.isLoading);
+  const isBootstrapping = useAuthStore((state) => state.isBootstrapping);
   const storeError = useAuthStore((state) => state.error);
   const login = useAuthStore((state) => state.login);
+  const savedCredentials = useAuthStore((state) => state.savedCredentials);
 
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (isAuthenticated) {
+    if (!isBootstrapping && isAuthenticated) {
       router.replace("/");
     }
-  }, [isAuthenticated, router]);
+  }, [isAuthenticated, isBootstrapping, router]);
+
+  // Подставляем сохранённый логин (после авто-входа пароль не показываем)
+  useEffect(() => {
+    if (savedCredentials?.identifier && !identifier) {
+      setIdentifier(savedCredentials.identifier);
+    }
+  }, [savedCredentials, identifier]);
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
@@ -58,6 +67,16 @@ export default function LoginPage() {
 
   const errorMessage = formError ?? storeError;
 
+  if (isBootstrapping || (isLoading && !formError && isAuthenticated === false && savedCredentials)) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
+        <div className="rounded-md border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 shadow-sm">
+          Восстанавливаем сессию...
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
       <div className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-8 shadow-sm">
@@ -65,7 +84,8 @@ export default function LoginPage() {
           Вход в систему
         </h1>
         <p className="mb-6 text-center text-sm text-slate-500">
-          Введите телефон или email и пароль для входа.
+          Введите телефон или email и пароль. На этом устройстве вход
+          запоминается — повторно вводить данные не нужно.
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">

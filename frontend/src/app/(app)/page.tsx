@@ -1,9 +1,14 @@
+"use client";
+
 import Link from "next/link";
 import React, { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/shared/components/ui/Card";
 import { OrdersApi } from "@/shared/api/ordersApi";
+import { ProfileApi } from "@/shared/api/profileApi";
+import { useAuthStore } from "@/shared/store/authStore";
 import type { Order } from "@/shared/types/orders";
+import type { OperatorSalaryResponse } from "@/shared/types/salary";
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat("ru-RU", {
@@ -36,6 +41,11 @@ function KpiCard({
 }
 
 export default function DashboardPage() {
+  const user = useAuthStore((state) => state.user);
+  const role = user?.role;
+  const isOperator = role === "operator";
+  const canManageOrders = role === "admin" || role === "manager";
+
   const { data: orders, isLoading, isError } = useQuery<Order[]>({
     queryKey: ["dashboard", "orders"],
     queryFn: () =>
@@ -43,6 +53,17 @@ export default function DashboardPage() {
         page: 1,
         pageSize: 200,
       }),
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+  });
+
+  const {
+    data: salaryData,
+    isLoading: isSalaryLoading,
+  } = useQuery<OperatorSalaryResponse>({
+    queryKey: ["dashboard", "operator-salary"],
+    queryFn: () => ProfileApi.getOperatorSalary(),
+    enabled: isOperator,
     staleTime: 60_000,
     refetchOnWindowFocus: false,
   });
@@ -100,9 +121,20 @@ export default function DashboardPage() {
     };
   }, [orders]);
 
+  const operatorSalaryTotal =
+    salaryData?.totalSalary ??
+    salaryData?.orders?.reduce((sum, o) => sum + (o.salaryAmount || 0), 0) ??
+    0;
+
   const kpiNew = isLoading ? "…" : String(newCount);
   const kpiCompleted = isLoading ? "…" : String(completedCount);
-  const kpiRevenue = isLoading ? "…" : formatCurrency(revenue);
+  const kpiMoney = isOperator
+    ? isSalaryLoading
+      ? "…"
+      : formatCurrency(operatorSalaryTotal)
+    : isLoading
+      ? "…"
+      : formatCurrency(revenue);
 
   const maxDaily = dailyCounts.reduce(
     (max, item) => (item.total > max ? item.total : max),
@@ -114,7 +146,7 @@ export default function DashboardPage() {
     <section className="space-y-4">
       <div className="grid gap-3 md:grid-cols-3">
         <KpiCard
-          label="Новые заявки"
+          label={isOperator ? "Мои активные" : "Новые заявки"}
           value={kpiNew}
           icon={<span className="text-lg">＋</span>}
         />
@@ -124,8 +156,8 @@ export default function DashboardPage() {
           icon={<span className="text-lg">✅</span>}
         />
         <KpiCard
-          label="Доход (по завершённым)"
-          value={kpiRevenue}
+          label={isOperator ? "Моя зарплата" : "Доход (по завершённым)"}
+          value={kpiMoney}
           icon={<span className="text-lg">💰</span>}
         />
       </div>
@@ -170,27 +202,53 @@ export default function DashboardPage() {
         </Card>
       ) : null}
 
-      <Card className="p-4 text-sm">
-        <h2 className="mb-3 text-base font-semibold text-slate-900">
-          Быстрые действия
-        </h2>
-        <div className="space-y-2 text-sm">
-          <Link
-            href="/orders/create"
-            className="flex items-center gap-2 text-sky-600 hover:text-sky-700"
-          >
-            <span className="text-lg">＋</span>
-            <span>Создать заявку</span>
-          </Link>
-          <Link
-            href="/reports/summary"
-            className="flex items-center gap-2 text-slate-700 hover:text-slate-900"
-          >
-            <span className="text-lg">ⓘ</span>
-            <span>Отчёты</span>
-          </Link>
-        </div>
-      </Card>
+      {canManageOrders ? (
+        <Card className="p-4 text-sm">
+          <h2 className="mb-3 text-base font-semibold text-slate-900">
+            Быстрые действия
+          </h2>
+          <div className="space-y-2 text-sm">
+            <Link
+              href="/orders/create"
+              className="flex items-center gap-2 text-sky-600 hover:text-sky-700"
+            >
+              <span className="text-lg">＋</span>
+              <span>Создать заявку</span>
+            </Link>
+            <Link
+              href="/reports/summary"
+              className="flex items-center gap-2 text-slate-700 hover:text-slate-900"
+            >
+              <span className="text-lg">ⓘ</span>
+              <span>Отчёты</span>
+            </Link>
+          </div>
+        </Card>
+      ) : null}
+
+      {isOperator ? (
+        <Card className="p-4 text-sm">
+          <h2 className="mb-3 text-base font-semibold text-slate-900">
+            Быстрые действия
+          </h2>
+          <div className="space-y-2 text-sm">
+            <Link
+              href="/orders"
+              className="flex items-center gap-2 text-sky-600 hover:text-sky-700"
+            >
+              <span className="text-lg">📋</span>
+              <span>Мои заявки</span>
+            </Link>
+            <Link
+              href="/reports"
+              className="flex items-center gap-2 text-slate-700 hover:text-slate-900"
+            >
+              <span className="text-lg">💰</span>
+              <span>Мои зарплаты</span>
+            </Link>
+          </div>
+        </Card>
+      ) : null}
     </section>
   );
 }

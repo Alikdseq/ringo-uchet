@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState } from "react";
-import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { OrdersApi } from "@/shared/api/ordersApi";
@@ -10,6 +9,7 @@ import { StatusBadge } from "@/shared/components/ui/StatusBadge";
 import { PageHeader } from "@/shared/components/ui/PageHeader";
 import { Card } from "@/shared/components/ui/Card";
 import { useAuthStore } from "@/shared/store/authStore";
+import { formatUserDisplayName } from "@/shared/utils/userDisplay";
 
 function OrderDetailSkeleton() {
   return (
@@ -67,6 +67,27 @@ const ORDER_STATUS_OPTIONS: { value: OrderStatus; label: string }[] = [
   { value: "CANCELLED", label: "Отменена" },
 ];
 
+function formatWorkVolume(item: OrderItem): string {
+  if (item.displayQuantity) {
+    return item.displayUnit
+      ? `${item.displayQuantity} ${item.displayUnit}`
+      : String(item.displayQuantity);
+  }
+  const meta = item.metadata || {};
+  const shifts = meta.shifts ?? meta.shift_count ?? meta.shifts_count;
+  const hours = meta.hours ?? meta.hours_count ?? meta.hour_count;
+  const parts: string[] = [];
+  if (typeof shifts === "number" || (typeof shifts === "string" && shifts)) {
+    parts.push(`${shifts} смен`);
+  }
+  if (typeof hours === "number" || (typeof hours === "string" && hours)) {
+    parts.push(`${hours} ч`);
+  }
+  if (parts.length > 0) return parts.join(" · ");
+  const qty = Number.isFinite(item.quantity) ? item.quantity : 0;
+  return item.unit ? `${qty} ${item.unit}` : String(qty);
+}
+
 export default function OrderDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -112,10 +133,16 @@ export default function OrderDetailPage() {
     ? (order.operators?.some((op) => op.id === user?.id) ||
        order.operator?.id === user?.id)
     : false;
-  
-  // Операторы должны видеть кнопки для своих заявок (назначенных им)
-  // Менеджеры и админы видят кнопки для всех заявок
-  const canSeeActionButtons = !isOperator || isOrderOperator || isManager || isAdmin;
+
+  const canManage = isAdmin || isManager;
+  // Оператор: только «Начать работу» на своих одобренных заявках
+  const canOperatorStartWork =
+    isOperator && isOrderOperator && order?.status === "APPROVED";
+  // Одобрение — админ/менеджер; завершение — только админ
+  const canApprove = canManage && order?.status === "CREATED";
+  const canStartWork =
+    (canManage || canOperatorStartWork) && order?.status === "APPROVED";
+  const canComplete = isAdmin && order?.status === "IN_PROGRESS";
 
   const changeStatusMutation = useMutation({
     mutationFn: async (payload: { status: OrderStatus; comment?: string }) => {
@@ -218,30 +245,33 @@ export default function OrderDetailPage() {
   const handleApprove = () => {
     if (!orderId || !order) return;
     if (order.status !== "CREATED") return;
+    if (!isAdmin && !isManager) return;
     setNextStatus("APPROVED");
     setStatusComment("");
     setStatusError(null);
     changeStatusMutation.mutate({
       status: "APPROVED",
-      comment: "Одобрено оператором",
+      comment: "Одобрено",
     });
   };
 
   const handleStartWork = () => {
     if (!orderId || !order) return;
     if (order.status !== "APPROVED") return;
+    if (isOperator && !isOrderOperator) return;
     setNextStatus("IN_PROGRESS");
     setStatusComment("");
     setStatusError(null);
     changeStatusMutation.mutate({
       status: "IN_PROGRESS",
-      comment: "Работа начата оператором",
+      comment: isOperator ? "Работа начата оператором" : "Работа начата",
     });
   };
 
   const handleComplete = () => {
     if (!orderId || !order) return;
     if (order.status !== "IN_PROGRESS") return;
+    if (!isAdmin) return;
     router.push(`/orders/${order.id}/complete`);
   };
 
@@ -291,64 +321,54 @@ export default function OrderDetailPage() {
             </button>
             {order ? (
               <>
-                {canSeeActionButtons ? (
+                {canApprove ? (
+                  <button
+                    type="button"
+                    onClick={handleApprove}
+                    disabled={changeStatusMutation.isPending}
+                    className="inline-flex items-center rounded-md border border-orange-500 bg-orange-500 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {changeStatusMutation.isPending ? "Одобряем..." : "Одобрить"}
+                  </button>
+                ) : null}
+                {canStartWork ? (
+                  <button
+                    type="button"
+                    onClick={handleStartWork}
+                    disabled={changeStatusMutation.isPending}
+                    className="inline-flex items-center rounded-md border border-blue-500 bg-blue-500 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {changeStatusMutation.isPending
+                      ? "Начинаем..."
+                      : "Начать работу"}
+                  </button>
+                ) : null}
+                {canComplete ? (
+                  <button
+                    type="button"
+                    onClick={handleComplete}
+                    className="inline-flex items-center rounded-md border border-emerald-500 bg-emerald-500 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-emerald-600"
+                  >
+                    Завершить
+                  </button>
+                ) : null}
+                {canManage ? (
                   <>
-                    {/* Кнопки продвижения по этапам для операторов, менеджеров и админов */}
-                    {order.status === "CREATED" ? (
+                    <button
+                      type="button"
+                      onClick={handleOpenStatusModal}
+                      className="inline-flex items-center rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+                    >
+                      Изменить статус
+                    </button>
+                    {order.status !== "COMPLETED" ? (
                       <button
                         type="button"
-                        onClick={handleApprove}
-                        disabled={changeStatusMutation.isPending}
-                        className="inline-flex items-center rounded-md border border-orange-500 bg-orange-500 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-60"
+                        onClick={() => setIsDeleteModalOpen(true)}
+                        className="rounded-md border border-red-300 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 shadow-sm hover:bg-red-100"
                       >
-                        {changeStatusMutation.isPending ? "Одобряем..." : "Одобрить"}
+                        Удалить
                       </button>
-                    ) : null}
-                    {order.status === "APPROVED" ? (
-                      <button
-                        type="button"
-                        onClick={handleStartWork}
-                        disabled={changeStatusMutation.isPending}
-                        className="inline-flex items-center rounded-md border border-blue-500 bg-blue-500 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        {changeStatusMutation.isPending ? "Начинаем..." : "Начать работу"}
-                      </button>
-                    ) : null}
-                    {order.status === "IN_PROGRESS" ? (
-                      <button
-                        type="button"
-                        onClick={handleComplete}
-                        className="inline-flex items-center rounded-md border border-emerald-500 bg-emerald-500 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-emerald-600"
-                      >
-                        Завершить
-                      </button>
-                    ) : null}
-                    {/* Дополнительные кнопки для менеджеров и админов */}
-                    {!isOperator ? (
-                      <>
-                        <Link
-                          href={`/orders/${order.id}/edit`}
-                          className="inline-flex items-center rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50"
-                        >
-                          Изменить
-                        </Link>
-                        <button
-                          type="button"
-                          onClick={handleOpenStatusModal}
-                          className="inline-flex items-center rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50"
-                        >
-                          Изменить статус
-                        </button>
-                        {order.status !== "COMPLETED" ? (
-                          <button
-                            type="button"
-                            onClick={() => setIsDeleteModalOpen(true)}
-                            className="rounded-md border border-red-300 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 shadow-sm hover:bg-red-100"
-                          >
-                            Удалить
-                          </button>
-                        ) : null}
-                      </>
                     ) : null}
                   </>
                 ) : null}
@@ -379,7 +399,7 @@ export default function OrderDetailPage() {
 
       {order ? (
         <div className="space-y-4">
-          {order.status === "COMPLETED" ? (
+          {order.status === "COMPLETED" && canManage ? (
             <Card className="flex flex-wrap items-center justify-between gap-3 border-emerald-200 bg-emerald-50 p-3 text-xs">
               <div className="space-y-1">
                 <div className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
@@ -400,16 +420,13 @@ export default function OrderDetailPage() {
                 >
                   {isReceiptLoading ? "Формируем чек..." : "Получить чек"}
                 </button>
-                {/* Кнопка удаления только для менеджеров и админов */}
-                {!isOperator ? (
-                  <button
-                    type="button"
-                    onClick={() => setIsDeleteModalOpen(true)}
-                    className="inline-flex flex-1 items-center justify-center rounded-md border border-red-300 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 shadow-sm hover:bg-red-100 md:flex-none"
-                  >
-                    Удалить
-                  </button>
-                ) : null}
+                <button
+                  type="button"
+                  onClick={() => setIsDeleteModalOpen(true)}
+                  className="inline-flex flex-1 items-center justify-center rounded-md border border-red-300 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 shadow-sm hover:bg-red-100 md:flex-none"
+                >
+                  Удалить
+                </button>
               </div>
             </Card>
           ) : null}
@@ -432,15 +449,17 @@ export default function OrderDetailPage() {
                   {formatDateTime(order.endDt)}
                 </div>
               </div>
-              <div className="text-right text-sm text-slate-700">
-                <div className="font-semibold">
-                  Сумма: {formatMoney(order.totalAmount)}
+              {!isOperator ? (
+                <div className="text-right text-sm text-slate-700">
+                  <div className="font-semibold">
+                    Сумма: {formatMoney(order.totalAmount)}
+                  </div>
+                  <div className="text-xs text-slate-500">
+                    Предоплата: {formatMoney(order.prepaymentAmount)} (
+                    {order.prepaymentStatus})
+                  </div>
                 </div>
-                <div className="text-xs text-slate-500">
-                  Предоплата: {formatMoney(order.prepaymentAmount)} (
-                  {order.prepaymentStatus})
-                </div>
-              </div>
+              ) : null}
             </div>
           </Card>
 
@@ -498,12 +517,7 @@ export default function OrderDetailPage() {
                 {order.manager ? (
                   <>
                     <div className="text-slate-700">
-                      {order.manager.fullNameFromApi ||
-                        `${order.manager.firstName ?? ""} ${
-                          order.manager.lastName ?? ""
-                        }`.trim() ||
-                        order.manager.username ||
-                        "—"}
+                      {formatUserDisplayName(order.manager)}
                     </div>
                     {order.manager.phone ? (
                       <div className="text-slate-500">{order.manager.phone}</div>
@@ -517,23 +531,13 @@ export default function OrderDetailPage() {
                 <div className="font-semibold text-slate-800">Операторы</div>
                 {order.operators && order.operators.length > 0 ? (
                   <ul className="list-inside list-disc space-y-0.5 text-slate-700">
-                    {order.operators.map((op) => {
-                      const fullName =
-                        op.fullNameFromApi ||
-                        `${op.firstName ?? ""} ${op.lastName ?? ""}`.trim() ||
-                        op.username ||
-                        `ID ${op.id}`;
-                      return <li key={op.id}>{fullName}</li>;
-                    })}
+                    {order.operators.map((op) => (
+                      <li key={op.id}>{formatUserDisplayName(op)}</li>
+                    ))}
                   </ul>
                 ) : order.operator ? (
                   <div className="text-slate-700">
-                    {order.operator.fullNameFromApi ||
-                      `${order.operator.firstName ?? ""} ${
-                        order.operator.lastName ?? ""
-                      }`.trim() ||
-                      order.operator.username ||
-                      `ID ${order.operator.id}`}
+                    {formatUserDisplayName(order.operator)}
                   </div>
                 ) : (
                   <div className="text-slate-500">Операторы не назначены</div>
@@ -543,56 +547,93 @@ export default function OrderDetailPage() {
           </Section>
 
           {/* Позиции заказа */}
-          <Section title="Позиции заказа">
+          <Section title={isOperator ? "Техника и работы" : "Позиции заказа"}>
             {order.items && order.items.length > 0 ? (
               <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-slate-200 text-xs">
-                  <thead className="bg-slate-50">
-                    <tr>
-                      <th className="px-2 py-1 text-left font-semibold text-slate-600">
-                        Наименование
-                      </th>
-                      <th className="px-2 py-1 text-right font-semibold text-slate-600">
-                        Кол-во
-                      </th>
-                      <th className="px-2 py-1 text-right font-semibold text-slate-600">
-                        Цена
-                      </th>
-                      <th className="px-2 py-1 text-right font-semibold text-slate-600">
-                        Скидка
-                      </th>
-                      <th className="px-2 py-1 text-right font-semibold text-slate-600">
-                        Итого
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 bg-white">
-                    {order.items.map((item: OrderItem, index: number) => (
-                      <tr key={item.id ?? index}>
-                        <td className="px-2 py-1 text-slate-800">
-                          <div className="font-medium">
-                            {item.nameSnapshot || "Позиция"}
-                          </div>
-                          <div className="text-[11px] uppercase text-slate-400">
-                            {item.itemType}
-                          </div>
-                        </td>
-                        <td className="px-2 py-1 text-right text-slate-700">
-                          {item.quantity.toFixed(2)} {item.unit}
-                        </td>
-                        <td className="px-2 py-1 text-right text-slate-700">
-                          {formatMoney(item.unitPrice)}
-                        </td>
-                        <td className="px-2 py-1 text-right text-slate-700">
-                          {item.discount.toFixed(2)}%
-                        </td>
-                        <td className="px-2 py-1 text-right text-slate-900">
-                          {formatMoney(item.lineTotal ?? item.unitPrice * item.quantity)}
-                        </td>
+                {isOperator ? (
+                  <table className="min-w-full divide-y divide-slate-200 text-xs">
+                    <thead className="bg-slate-50">
+                      <tr>
+                        <th className="px-2 py-1 text-left font-semibold text-slate-600">
+                          Наименование
+                        </th>
+                        <th className="px-2 py-1 text-left font-semibold text-slate-600">
+                          Тип
+                        </th>
+                        <th className="px-2 py-1 text-right font-semibold text-slate-600">
+                          Смены / часы
+                        </th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 bg-white">
+                      {order.items.map((item: OrderItem, index: number) => (
+                        <tr key={item.id ?? index}>
+                          <td className="px-2 py-1 text-slate-800">
+                            <div className="font-medium">
+                              {item.nameSnapshot || "Позиция"}
+                            </div>
+                          </td>
+                          <td className="px-2 py-1 text-[11px] uppercase text-slate-400">
+                            {item.itemType}
+                          </td>
+                          <td className="px-2 py-1 text-right text-slate-700">
+                            {formatWorkVolume(item)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <table className="min-w-full divide-y divide-slate-200 text-xs">
+                    <thead className="bg-slate-50">
+                      <tr>
+                        <th className="px-2 py-1 text-left font-semibold text-slate-600">
+                          Наименование
+                        </th>
+                        <th className="px-2 py-1 text-right font-semibold text-slate-600">
+                          Кол-во
+                        </th>
+                        <th className="px-2 py-1 text-right font-semibold text-slate-600">
+                          Цена
+                        </th>
+                        <th className="px-2 py-1 text-right font-semibold text-slate-600">
+                          Скидка
+                        </th>
+                        <th className="px-2 py-1 text-right font-semibold text-slate-600">
+                          Итого
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 bg-white">
+                      {order.items.map((item: OrderItem, index: number) => (
+                        <tr key={item.id ?? index}>
+                          <td className="px-2 py-1 text-slate-800">
+                            <div className="font-medium">
+                              {item.nameSnapshot || "Позиция"}
+                            </div>
+                            <div className="text-[11px] uppercase text-slate-400">
+                              {item.itemType}
+                            </div>
+                          </td>
+                          <td className="px-2 py-1 text-right text-slate-700">
+                            {item.quantity.toFixed(2)} {item.unit}
+                          </td>
+                          <td className="px-2 py-1 text-right text-slate-700">
+                            {formatMoney(item.unitPrice)}
+                          </td>
+                          <td className="px-2 py-1 text-right text-slate-700">
+                            {item.discount.toFixed(2)}%
+                          </td>
+                          <td className="px-2 py-1 text-right text-slate-900">
+                            {formatMoney(
+                              item.lineTotal ?? item.unitPrice * item.quantity,
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
               </div>
             ) : (
               <div className="text-xs text-slate-500">
@@ -601,33 +642,35 @@ export default function OrderDetailPage() {
             )}
           </Section>
 
-          {/* Финансы */}
-          <Section title="Финансы">
-            <div className="grid gap-4 md:grid-cols-3">
-              <div className="space-y-1 text-xs">
-                <div className="text-slate-500">Предоплата</div>
-                <div className="text-sm font-semibold text-slate-900">
-                  {formatMoney(order.prepaymentAmount)}
+          {/* Финансы — только для админа/менеджера */}
+          {!isOperator ? (
+            <Section title="Финансы">
+              <div className="grid gap-4 md:grid-cols-3">
+                <div className="space-y-1 text-xs">
+                  <div className="text-slate-500">Предоплата</div>
+                  <div className="text-sm font-semibold text-slate-900">
+                    {formatMoney(order.prepaymentAmount)}
+                  </div>
+                  <div className="text-slate-500 text-[11px]">
+                    Статус: {order.prepaymentStatus}
+                  </div>
                 </div>
-                <div className="text-slate-500 text-[11px]">
-                  Статус: {order.prepaymentStatus}
+                <div className="space-y-1 text-xs">
+                  <div className="text-slate-500">Сумма</div>
+                  <div className="text-sm font-semibold text-slate-900">
+                    {formatMoney(order.totalAmount)}
+                  </div>
+                </div>
+                <div className="space-y-1 text-xs">
+                  <div className="text-slate-500">Snapshot</div>
+                  <div className="text-[11px] text-slate-500">
+                    Структура цены хранится в <code>price_snapshot</code> и будет
+                    отображена отдельным компонентом на следующем этапе.
+                  </div>
                 </div>
               </div>
-              <div className="space-y-1 text-xs">
-                <div className="text-slate-500">Сумма</div>
-                <div className="text-sm font-semibold text-slate-900">
-                  {formatMoney(order.totalAmount)}
-                </div>
-              </div>
-              <div className="space-y-1 text-xs">
-                <div className="text-slate-500">Snapshot</div>
-                <div className="text-[11px] text-slate-500">
-                  Структура цены хранится в <code>price_snapshot</code> и будет
-                  отображена отдельным компонентом на следующем этапе.
-                </div>
-              </div>
-            </div>
-          </Section>
+            </Section>
+          ) : null}
 
           {/* Блоки таймлайна статусов и фото убраны по требованию бизнес-логики */}
         </div>

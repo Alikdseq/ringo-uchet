@@ -8,6 +8,7 @@ import { UsersApi } from "@/shared/api/usersApi";
 import { CatalogApi } from "@/shared/api/catalogApi";
 import { PageHeader } from "@/shared/components/ui/PageHeader";
 import { Card } from "@/shared/components/ui/Card";
+import { StatusBadge } from "@/shared/components/ui/StatusBadge";
 import { useDebouncedValue } from "@/shared/hooks";
 import { useAuthStore } from "@/shared/store/authStore";
 import type { Order, OrderItem, OrderStatus } from "@/shared/types/orders";
@@ -19,10 +20,25 @@ import type {
 } from "@/shared/types/catalog";
 import { AppError } from "@/shared/api/httpClient";
 import type { OrderRequestPayload } from "@/shared/api/ordersApi";
+import { RoleGuard } from "@/shared/components/auth/RoleGuard";
+import { formatUserDisplayName } from "@/shared/utils/userDisplay";
 
 function formatUtcWithoutMillis(date: Date): string {
   const iso = date.toISOString();
   return iso.replace(/\.\d+Z$/, "Z");
+}
+
+function formatDateTime(value?: Date | string | null): string {
+  if (!value) return "-";
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return date.toLocaleString("ru-RU", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 type SelectedItem = OrderItem & { localId: string };
@@ -43,6 +59,14 @@ function formatCurrency(value: number): string {
 }
 
 export default function OrderEditPage() {
+  return (
+    <RoleGuard allowedRoles={["admin", "manager"]} redirectTo="/orders">
+      <OrderEditPageContent />
+    </RoleGuard>
+  );
+}
+
+function OrderEditPageContent() {
   const params = useParams();
   const router = useRouter();
   const orderId = params?.orderId as string | undefined;
@@ -172,20 +196,12 @@ export default function OrderEditPage() {
       if (order.operators && order.operators.length > 0) {
         order.operators.forEach((op) => {
           if (typeof op.id !== "number") return;
-          const name =
-            op.fullNameFromApi ||
-            `${op.firstName ?? ""} ${op.lastName ?? ""}`.trim() ||
-            op.username ||
-            `Оператор #${op.id}`;
+          const name = formatUserDisplayName(op);
           salaries.push({ operatorId: op.id, name, salary: "" });
         });
       } else if (order.operator && typeof order.operator.id === "number") {
         const op = order.operator;
-        const name =
-          op.fullNameFromApi ||
-          `${op.firstName ?? ""} ${op.lastName ?? ""}`.trim() ||
-          op.username ||
-          `Оператор #${op.id}`;
+        const name = formatUserDisplayName(op);
         salaries.push({ operatorId: op.id, name, salary: "" });
       }
       setOperatorSalaries(salaries);
@@ -509,15 +525,12 @@ export default function OrderEditPage() {
         payload.total_amount = Number(totalAmount);
       }
 
-      if (explicitOperatorIds.length === 1) {
-        payload.operator_id = explicitOperatorIds[0];
-        // Очищаем список множественных операторов
-        payload.operator_ids = [];
-      } else if (explicitOperatorIds.length > 1) {
+      // Всегда держим M2M operators и legacy operator в синхроне:
+      // иначе оператор получает 403 на карточке (права смотрят в operators).
+      if (explicitOperatorIds.length > 0) {
         payload.operator_ids = explicitOperatorIds;
-        payload.operator_id = null;
+        payload.operator_id = explicitOperatorIds[0];
       } else {
-        // Убираем всех операторов
         payload.operator_id = null;
         payload.operator_ids = [];
       }
@@ -585,7 +598,10 @@ export default function OrderEditPage() {
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
-    await saveOrder();
+    const saved = await saveOrder();
+    if (saved) {
+      router.replace("/orders");
+    }
   };
 
   const handleBack = async () => {
@@ -673,6 +689,48 @@ export default function OrderEditPage() {
       ) : null}
 
       <form onSubmit={handleSubmit} className="space-y-4 text-xs">
+        {order ? (
+          <Card className="p-4">
+            <div className="flex items-center gap-3">
+              <span className="text-sm font-medium text-slate-500">Заявка</span>
+              <span className="text-lg font-semibold text-slate-900">
+                {order.number}
+              </span>
+              <StatusBadge status={status} />
+            </div>
+            <div className="mt-1 text-xs text-slate-500">
+              Создана: {formatDateTime(order.createdAt)} · Начало:{" "}
+              {formatDateTime(startDt || order.startDt)} · Окончание:{" "}
+              {formatDateTime(endDt || order.endDt)}
+            </div>
+          </Card>
+        ) : null}
+
+        {order && order.status === "COMPLETED" ? (
+          <Card className="flex flex-wrap items-center justify-between gap-3 border-emerald-200 bg-emerald-50 p-3 text-xs">
+            <div className="space-y-1">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
+                Действия с завершённой заявкой
+              </div>
+              <div className="text-[11px] text-emerald-800">
+                Скачайте чек для клиента.
+              </div>
+            </div>
+            <div className="flex flex-1 justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  void handleDownloadReceipt();
+                }}
+                disabled={isReceiptLoading || isSubmitting}
+                className="inline-flex flex-1 items-center justify-center rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60 md:flex-none"
+              >
+                {isReceiptLoading ? "Формируем чек..." : "Получить чек"}
+              </button>
+            </div>
+          </Card>
+        ) : null}
+
         {/* Информация о клиенте - видна всем, включая операторов */}
         {order && order.client ? (
           <Card className="p-4">
@@ -827,11 +885,7 @@ export default function OrderEditPage() {
             <div className="grid gap-2 md:grid-cols-2">
               {operators.map((operator) => {
                 const checked = operatorIds.includes(operator.id);
-                const name =
-                  `${operator.firstName ?? ""} ${operator.lastName ?? ""}`.trim() ||
-                  operator.fullNameFromApi ||
-                  operator.username ||
-                  `Оператор #${operator.id}`;
+                const name = formatUserDisplayName(operator);
 
                 return (
                   <label
@@ -991,19 +1045,6 @@ export default function OrderEditPage() {
                   disabled={isSubmitting}
                 >
                   Удалить
-                </button>
-              ) : null}
-
-              {order && order.status === "COMPLETED" ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    void handleDownloadReceipt();
-                  }}
-                  disabled={isReceiptLoading || isSubmitting}
-                  className="rounded-md bg-emerald-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {isReceiptLoading ? "Формируем чек..." : "Получить чек"}
                 </button>
               ) : null}
 

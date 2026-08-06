@@ -326,12 +326,15 @@ class OrderSerializer(serializers.ModelSerializer):
             
             with transaction.atomic():
                 order = Order.objects.create(**validated_data)
-                # Добавляем операторов
+                # Синхронизируем M2M operators и legacy FK operator
+                legacy_operator = validated_data.get("operator") or order.operator
                 if operators:
                     order.operators.set(operators)
-                # Для обратной совместимости: если указан operator_id, добавляем его в operators
-                if validated_data.get("operator"):
-                    order.operators.add(validated_data["operator"])
+                    if not order.operator_id:
+                        order.operator = operators[0]
+                        order.save(update_fields=["operator"])
+                elif legacy_operator:
+                    order.operators.add(legacy_operator)
             # Добавляем items если они переданы при создании
             if items_data and len(items_data) > 0:
                 self._upsert_items(order, items_data)
@@ -417,9 +420,18 @@ class OrderSerializer(serializers.ModelSerializer):
             with transaction.atomic():
                 instance.save()
                 
-                # Обновляем операторов если они переданы
+                # Обновляем операторов: M2M и legacy FK держим синхронно
                 if operators is not None:
                     instance.operators.set(operators)
+                    # Если прислали пустой M2M, но FK operator уже выставлен выше — восстановим M2M
+                    if not operators and instance.operator_id:
+                        instance.operators.add(instance.operator_id)
+                    elif operators and not instance.operator_id:
+                        instance.operator = operators[0]
+                        instance.save(update_fields=["operator"])
+                elif instance.operator_id:
+                    # Передан только operator_id — добавим в M2M
+                    instance.operators.add(instance.operator_id)
                 
                 # Обновляем items если они переданы
                 if items_data is not None and len(items_data) > 0:

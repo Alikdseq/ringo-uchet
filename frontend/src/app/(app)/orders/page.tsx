@@ -108,6 +108,8 @@ export default function OrdersPage() {
 
   const user = useAuthStore((state) => state.user);
   const role = user?.role;
+  const isOperator = role === "operator";
+  const canManageOrders = role === "admin" || role === "manager";
 
   const { data, isLoading, isError, error, refetch } = useOrdersData({
     status,
@@ -265,7 +267,7 @@ export default function OrdersPage() {
         </div>
       ) : null}
 
-      {draftSummary && (status === "ALL" || status === "DRAFT") ? (
+      {canManageOrders && draftSummary && (status === "ALL" || status === "DRAFT") ? (
         <div className="space-y-1">
           <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
             Черновики
@@ -328,11 +330,11 @@ export default function OrdersPage() {
         ) : null}
 
         {filteredOrdersForRole.map((order) => {
-          // Для операторов ведем на детальную страницу, для остальных - на редактирование
-          const detailUrl = role === "operator" 
-            ? `/orders/${order.id}` 
+          // Админ/менеджер — сразу в редактирование; оператор — просмотр
+          const detailUrl = isOperator
+            ? `/orders/${order.id}`
             : `/orders/${order.id}/edit`;
-          
+
           return (
           <Link key={order.id} href={detailUrl}>
             <Card className="mb-1 flex items-center justify-between rounded-xl px-3 py-3 text-sm shadow-sm">
@@ -352,9 +354,11 @@ export default function OrdersPage() {
               </div>
               <div className="flex flex-col items-end gap-1">
                 <StatusBadge status={order.status} />
-                <div className="text-xs font-semibold text-sky-600">
-                  {formatMoney(order.totalAmount)}
-                </div>
+                {!isOperator ? (
+                  <div className="text-xs font-semibold text-sky-600">
+                    {formatMoney(order.totalAmount)}
+                  </div>
+                ) : null}
               </div>
             </Card>
           </Link>
@@ -363,17 +367,21 @@ export default function OrdersPage() {
 
         {!isLoading && filteredOrdersForRole.length === 0 ? (
           <div className="rounded-md border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-xs text-slate-500">
-            Заявки не найдены.
+            {isOperator
+              ? "Нет назначенных вам заявок."
+              : "Заявки не найдены."}
           </div>
         ) : null}
       </div>
 
-      <Link
-        href="/orders/create"
-        className="fixed bottom-20 right-4 inline-flex h-12 w-12 items-center justify-center rounded-full bg-sky-500 text-2xl text-white shadow-lg md:bottom-6"
-      >
-        +
-      </Link>
+      {canManageOrders ? (
+        <Link
+          href="/orders/create"
+          className="fixed bottom-20 right-4 inline-flex h-12 w-12 items-center justify-center rounded-full bg-sky-500 text-2xl text-white shadow-lg md:bottom-6"
+        >
+          +
+        </Link>
+      ) : null}
     </section>
   );
 }

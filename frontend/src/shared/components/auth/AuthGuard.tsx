@@ -13,15 +13,19 @@ export function AuthGuard({ children }: AuthGuardProps) {
   const pathname = usePathname();
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const isLoading = useAuthStore((state) => state.isLoading);
+  const isBootstrapping = useAuthStore((state) => state.isBootstrapping);
 
   useEffect(() => {
-    if (!isLoading && !isAuthenticated) {
-      const search = pathname && pathname !== "/" ? `?next=${encodeURIComponent(pathname)}` : "";
+    if (!isBootstrapping && !isLoading && !isAuthenticated) {
+      const search =
+        pathname && pathname !== "/"
+          ? `?next=${encodeURIComponent(pathname)}`
+          : "";
       router.replace(`/login${search}`);
     }
-  }, [isAuthenticated, isLoading, pathname, router]);
+  }, [isAuthenticated, isLoading, isBootstrapping, pathname, router]);
 
-  if (isLoading) {
+  if (isBootstrapping || isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50">
         <div className="rounded-md border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 shadow-sm">
@@ -32,11 +36,8 @@ export function AuthGuard({ children }: AuthGuardProps) {
   }
 
   if (!isAuthenticated) {
-    // Пока выполняется редирект на /login, не рендерим защищённый контент.
     return null;
   }
 
   return <>{children}</>;
 }
-
-

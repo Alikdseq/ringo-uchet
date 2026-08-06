@@ -1,14 +1,17 @@
-import React from "react";
+"use client";
+
+import React, { useMemo } from "react";
 import Link from "next/link";
+import { useAuthStore } from "@/shared/store/authStore";
 
 interface BottomNavProps {
   pathname: string;
 }
 
-const navItems = [
+const ALL_NAV_ITEMS = [
   { href: "/", label: "Главная" },
   { href: "/orders", label: "Заявки" },
-  { href: "/catalog", label: "Каталог" },
+  { href: "/catalog", label: "Каталог", hideForRoles: ["operator"] as const },
   { href: "/reports", label: "Отчёты" },
   { href: "/profile", label: "Профиль" },
 ];
@@ -231,6 +234,18 @@ function NavIcon({
 }
 
 export function BottomNav({ pathname }: BottomNavProps) {
+  const role = useAuthStore((state) => state.user?.role);
+
+  const navItems = useMemo(
+    () =>
+      ALL_NAV_ITEMS.filter((item) => {
+        if (!("hideForRoles" in item) || !item.hideForRoles) return true;
+        if (!role) return true;
+        return !(item.hideForRoles as readonly string[]).includes(role);
+      }),
+    [role],
+  );
+
   return (
     <nav className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/95 backdrop-blur">
       <div className="mx-auto flex max-w-7xl items-center justify-between px-2 py-2">
@@ -245,19 +260,19 @@ export function BottomNav({ pathname }: BottomNavProps) {
               key={item.href}
               href={item.href}
               aria-current={active ? "page" : undefined}
-                className={`flex flex-1 flex-col items-center gap-1 rounded-xl px-2 py-1.5 text-[11px] font-medium transition-colors ${
+              className={`flex flex-1 flex-col items-center gap-1 rounded-xl px-2 py-1.5 text-[11px] font-medium transition-colors ${
                 active
-                    ? "text-slate-900"
-                    : "text-slate-400 hover:text-slate-700"
+                  ? "text-slate-900"
+                  : "text-slate-400 hover:text-slate-700"
               }`}
             >
               <NavIcon href={item.href} active={active} />
               <span>{item.label}</span>
-                <span
-                  className={`mt-0.5 h-1 w-8 rounded-full transition-all ${
-                    active ? "bg-slate-900 opacity-100" : "bg-slate-300 opacity-0"
-                  }`}
-                />
+              <span
+                className={`mt-0.5 h-1 w-8 rounded-full transition-all ${
+                  active ? "bg-slate-900 opacity-100" : "bg-slate-300 opacity-0"
+                }`}
+              />
             </Link>
           );
         })}

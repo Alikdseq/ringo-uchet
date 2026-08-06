@@ -1,0 +1,222 @@
+# Production: полный стек на сервере 89.169.38.5 / ringoouchet.ru
+#
+# Первый запуск (HTTP, до SSL):
+#   cp .env.prod.example .env.prod   # заполнить секреты
+#   export NGINX_CONF=prod-init.conf
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# После certbot (HTTPS):
+#   export NGINX_CONF=prod.conf
+#   docker compose -f docker-compose.prod.yml up -d nginx
+
+name: ringo-prod
+
+x-django-env: &django-env
+  DJANGO_SETTINGS_MODULE: ringo_backend.settings.prod
+  DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY}
+  DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-ringoouchet.ru,www.ringoouchet.ru,89.169.38.5,localhost,127.0.0.1}
+  CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-https://ringoouchet.ru,https://www.ringoouchet.ru,http://ringoouchet.ru,http://www.ringoouchet.ru,http://89.169.38.5}
+  CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-https://ringoouchet.ru,https://www.ringoouchet.ru}
+  CORS_ALLOW_ALL_ORIGINS: ${CORS_ALLOW_ALL_ORIGINS:-true}
+  POSTGRES_HOST: db
+  POSTGRES_PORT: 5432
+  POSTGRES_DB: ${DB_NAME:-ringo_prod}
+  POSTGRES_USER: ${DB_USER:-ringo_user}
+  POSTGRES_PASSWORD: ${DB_PASSWORD}
+  CELERY_BROKER_URL: redis://redis:6379/0
+  CELERY_RESULT_BACKEND: redis://redis:6379/0
+  AWS_S3_ENDPOINT_URL: http://minio:9000
+  AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minioadmin}
+  AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+  AWS_BUCKET: ${AWS_BUCKET:-ringo-media-prod}
+  JWT_ACCESS_MINUTES: ${JWT_ACCESS_MINUTES:-480}
+  JWT_REFRESH_DAYS: ${JWT_REFRESH_DAYS:-30}
+
+services:
+  db:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-ringo_prod}
+      POSTGRES_USER: ${DB_USER:-ringo_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-ringo_user}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ringo-net
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --save 20 1 --loglevel warning
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ringo-net
+
+  minio:
+    image: quay.io/minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - miniodata:/data
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    networks:
+      - ringo-net
+
+  django-api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: ringo-django-api:prod
+    restart: unless-stopped
+    env_file:
+      - .env.prod
+    environment:
+      <<: *django-env
+    volumes:
+      - ./backend/staticfiles:/app/staticfiles
+      - ./backend/media:/app/media
+    command: >
+      sh -c "python manage.py migrate --noinput &&
+             python manage.py collectstatic --noinput &&
+             gunicorn ringo_backend.wsgi:application
+             --bind 0.0.0.0:8000
+             --workers 2
+             --timeout 120
+             --access-logfile -
+             --error-logfile -"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; r=urllib.request.urlopen('http://127.0.0.1:8000/api/health/', timeout=5); assert r.getcode()==200",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - ringo-net
+
+  celery:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: ringo-celery:prod
+    restart: unless-stopped
+    env_file:
+      - .env.prod
+    environment:
+      <<: *django-env
+    command: celery -A ringo_backend worker --loglevel=info --concurrency=2
+    depends_on:
+      django-api:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - ringo-net
+
+  celery-beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: ringo-celery-beat:prod
+    restart: unless-stopped
+    env_file:
+      - .env.prod
+    environment:
+      <<: *django-env
+    command: celery -A ringo_backend beat --loglevel=info
+    depends_on:
+      django-api:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - ringo-net
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org}
+        API_INTERNAL_URL: http://django-api:8000
+        NEXT_PUBLIC_API_URL: /api/v1
+    image: ringo-frontend:prod
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_API_URL: /api/v1
+      NEXT_PUBLIC_API_BASE_URL: /api/v1
+      API_INTERNAL_URL: http://django-api:8000
+    depends_on:
+      django-api:
+        condition: service_healthy
+    networks:
+      - ringo-net
+
+  nginx:
+    image: nginx:1.25-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infra/nginx/${NGINX_CONF:-prod-init.conf}:/etc/nginx/conf.d/default.conf:ro
+      - ./backend/staticfiles:/app/staticfiles:ro
+      - ./backend/media:/app/media:ro
+      - certbot_www:/var/www/certbot:ro
+      - letsencrypt:/etc/letsencrypt:ro
+    depends_on:
+      - django-api
+      - frontend
+    networks:
+      - ringo-net
+
+  certbot:
+    image: certbot/certbot:latest
+    profiles:
+      - ssl
+    volumes:
+      - certbot_www:/var/www/certbot
+      - letsencrypt:/etc/letsencrypt
+    entrypoint: >
+      certbot certonly --webroot -w /var/www/certbot
+      -d ringoouchet.ru -d www.ringoouchet.ru
+      --email admin@ringoouchet.ru --agree-tos --no-eff-email
+
+volumes:
+  pgdata:
+  redisdata:
+  miniodata:
+  certbot_www:
+  letsencrypt:
+
+networks:
+  ringo-net:
+    driver: bridge

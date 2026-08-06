@@ -9,6 +9,15 @@ class IsOwnerOrManager(permissions.BasePermission):
     Оператор видит только назначенные ему заявки.
     """
 
+    def has_permission(self, request, view):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+        return (
+            getattr(user, "role", None) in ("admin", "manager", "operator")
+            or user.is_superuser
+        )
+
     def has_object_permission(self, request, view, obj):
         user = request.user
         if not user or not user.is_authenticated:
@@ -22,14 +31,23 @@ class IsOwnerOrManager(permissions.BasePermission):
         if user.role == "manager":
             return True
 
-        # Оператор видит только назначенные ему заявки
+        # Оператор — только назначенные ему заявки (M2M operators и/или legacy FK)
         if user.role == "operator":
+            in_operators = False
             if hasattr(obj, "operators"):
-                # Проверяем, есть ли пользователь в operators
-                return obj.operators.filter(id=user.id).exists()
-            # Для обратной совместимости проверяем старый operator
-            if hasattr(obj, "operator"):
-                return obj.operator == user
+                try:
+                    in_operators = obj.operators.filter(id=user.id).exists()
+                except Exception:
+                    in_operators = False
+            if in_operators:
+                return True
+            # Обратная совместимость: старое поле operator
+            operator_id = getattr(obj, "operator_id", None)
+            if operator_id is not None and operator_id == user.id:
+                return True
+            operator = getattr(obj, "operator", None)
+            if operator is not None and operator == user:
+                return True
             return False
 
         return False

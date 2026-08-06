@@ -1,5 +1,9 @@
 import type { NextConfig } from "next";
 
+// В Docker: http://django-api:8000; локально без Docker: http://127.0.0.1:8001
+const apiProxyTarget =
+  process.env.API_INTERNAL_URL || "http://127.0.0.1:8001";
+
 const nextConfig: NextConfig = {
   // Оптимизация для production
   compress: true,
@@ -7,6 +11,16 @@ const nextConfig: NextConfig = {
   // Переменные окружения для API
   env: {
     NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || "/api/v1",
+  },
+
+  // Чтобы /api/* работал и при открытии frontend на :3000 (без nginx)
+  async rewrites() {
+    return [
+      {
+        source: "/api/:path*",
+        destination: `${apiProxyTarget}/api/:path*`,
+      },
+    ];
   },
   
   // Headers для безопасности

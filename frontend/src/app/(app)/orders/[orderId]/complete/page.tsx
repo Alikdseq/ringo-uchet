@@ -7,6 +7,8 @@ import { OrdersApi } from "@/shared/api/ordersApi";
 import type { Order } from "@/shared/types/orders";
 import { PageHeader } from "@/shared/components/ui/PageHeader";
 import { Card } from "@/shared/components/ui/Card";
+import { RoleGuard } from "@/shared/components/auth/RoleGuard";
+import { formatUserDisplayName } from "@/shared/utils/userDisplay";
 
 function formatUtcWithoutMillis(date: Date): string {
   const iso = date.toISOString();
@@ -14,6 +16,14 @@ function formatUtcWithoutMillis(date: Date): string {
 }
 
 export default function OrderCompletePage() {
+  return (
+    <RoleGuard allowedRoles={["admin"]} redirectTo="/orders">
+      <OrderCompletePageContent />
+    </RoleGuard>
+  );
+}
+
+function OrderCompletePageContent() {
   const params = useParams();
   const router = useRouter();
   const orderId = params?.orderId as string | undefined;
@@ -43,21 +53,19 @@ export default function OrderCompletePage() {
     if (order.operators && order.operators.length > 0) {
       order.operators.forEach((op) => {
         if (typeof op.id !== "number") return;
-        const name =
-          `${op.firstName ?? ""} ${op.lastName ?? ""}`.trim() ||
-          op.fullNameFromApi ||
-          op.username ||
-          `Оператор #${op.id}`;
-        entries.push({ operatorId: op.id, name, salary: "" });
+        entries.push({
+          operatorId: op.id,
+          name: formatUserDisplayName(op),
+          salary: "",
+        });
       });
     } else if (order.operator && typeof order.operator.id === "number") {
       const op = order.operator;
-      const name =
-        `${op.firstName ?? ""} ${op.lastName ?? ""}`.trim() ||
-        op.fullNameFromApi ||
-        op.username ||
-        `Оператор #${op.id}`;
-      entries.push({ operatorId: op.id, name, salary: "" });
+      entries.push({
+        operatorId: op.id,
+        name: formatUserDisplayName(op),
+        salary: "",
+      });
     }
     setOperatorSalaries(entries);
   }, [order]);
