@@ -16,6 +16,7 @@ import type { Equipment, MaterialItem, ServiceItem } from "@/shared/types/catalo
 import type { OrderRequestPayload } from "@/shared/api/ordersApi";
 import { RoleGuard } from "@/shared/components/auth/RoleGuard";
 import { formatUserDisplayName } from "@/shared/utils/userDisplay";
+import { AddressSuggestInput } from "@/shared/components/ui/AddressSuggestInput";
 
 type ClientListItem = ClientInfo;
 const ORDER_DRAFT_STORAGE_KEY = "order-create-draft-v1";
@@ -50,10 +51,6 @@ function OrderCreatePageContent() {
   const queryClient = useQueryClient();
 
   // Клиент
-  const [clientSearch, setClientSearch] = useState("");
-  const debouncedClientSearch = useDebouncedValue(clientSearch, 400);
-  const [clients, setClients] = useState<ClientListItem[]>([]);
-  const [isLoadingClients, setIsLoadingClients] = useState(false);
   const [selectedClient, setSelectedClient] = useState<ClientListItem | null>(
     null,
   );
@@ -321,42 +318,10 @@ function OrderCreatePageContent() {
     }
   };
 
-  const loadClients = async (searchQuery?: string) => {
-    setIsLoadingClients(true);
-    try {
-      const query = searchQuery ?? debouncedClientSearch;
-      const clientsList = await CatalogApi.getClients(
-        query ? { search: query } : {},
-      );
-      setClients(clientsList);
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Не удалось загрузить клиентов";
-      setError(message);
-      setClients([]);
-    } finally {
-      setIsLoadingClients(false);
-    }
-  };
-
   useEffect(() => {
     void loadCatalog();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [catalogType, debouncedCatalogSearch]);
-
-  // Автоматическая загрузка клиентов при изменении поискового запроса
-  useEffect(() => {
-    void loadClients();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debouncedClientSearch]);
-
-  // Загружаем всех клиентов при первом открытии страницы (если поле поиска пустое)
-  useEffect(() => {
-    if (clientSearch === "" && clients.length === 0 && !isLoadingClients) {
-      void loadClients("");
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const toggleOperator = (id: number) => {
     setOperatorIds((prev) =>
@@ -532,7 +497,7 @@ function OrderCreatePageContent() {
     event.preventDefault();
 
     if (!selectedClient && (!newClientName || !newClientPhone)) {
-      setError("Укажите клиента: выберите из списка или создайте нового");
+      setError("Укажите ФИО и телефон клиента");
       return;
     }
     if (!address.trim()) {
@@ -658,7 +623,7 @@ function OrderCreatePageContent() {
     <section className="space-y-4">
       <PageHeader
         title="Создание заявки"
-        subtitle="Форма создания заявки: клиент, адрес, операторы, номенклатура и примерная стоимость."
+        subtitle="Форма создания заявки: клиент, адрес, номенклатура, операторы и стоимость."
       />
 
       {error ? (
@@ -673,69 +638,6 @@ function OrderCreatePageContent() {
             1. Данные клиента
           </h2>
 
-          <div className="space-y-2">
-            <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-600">
-              Поиск клиента
-            </label>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                className="block w-full rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-900 shadow-sm outline-none ring-0 placeholder:text-slate-400 focus:border-slate-900"
-                placeholder="Имя или телефон клиента"
-                value={clientSearch}
-                onChange={(event) => setClientSearch(event.target.value)}
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  // При нажатии кнопки используем текущее значение поиска, а не debounced
-                  void loadClients(clientSearch);
-                }}
-                disabled={isLoadingClients}
-                className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {isLoadingClients ? "Поиск..." : "Найти"}
-              </button>
-            </div>
-            {isLoadingClients ? (
-              <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 p-2 text-xs text-slate-500">
-                Загрузка клиентов...
-              </div>
-            ) : clients.length > 0 ? (
-              <ul className="mt-2 max-h-40 space-y-1 overflow-y-auto rounded-md border border-slate-200 bg-slate-50 p-2 text-xs">
-                {clients.map((client) => {
-                  const active = selectedClient?.id === client.id;
-                  return (
-                    <li
-                      key={client.id}
-                      className={`flex cursor-pointer items-center justify-between rounded px-2 py-1.5 transition-colors ${
-                        active
-                          ? "bg-slate-900 text-white"
-                          : "hover:bg-slate-200"
-                      }`}
-                      onClick={() => handleSelectClient(client)}
-                    >
-                      <span className="truncate">
-                        {client.name} · {client.phone}
-                      </span>
-                      {active ? (
-                        <span className="ml-2 text-xs">✓</span>
-                      ) : null}
-                    </li>
-                  );
-                })}
-              </ul>
-            ) : (clientSearch || debouncedClientSearch) && !isLoadingClients ? (
-              <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 p-2 text-xs text-slate-500">
-                Клиенты не найдены
-              </div>
-            ) : null}
-          </div>
-
-          <div className="border-t border-dashed border-slate-200 pt-3 text-xs text-slate-500">
-            Или создайте нового клиента:
-          </div>
-
           <div className="grid gap-3 md:grid-cols-2">
             <div className="space-y-1.5">
               <label className="block text-xs font-medium uppercase tracking-wide text-slate-600">
@@ -745,7 +647,10 @@ function OrderCreatePageContent() {
                 type="text"
                 className="block w-full rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-900 shadow-sm outline-none ring-0 placeholder:text-slate-400 focus:border-slate-900"
                 value={newClientName}
-                onChange={(event) => setNewClientName(event.target.value)}
+                onChange={(event) => {
+                  setNewClientName(event.target.value);
+                  setSelectedClient(null);
+                }}
               />
             </div>
             <div className="space-y-1.5">
@@ -756,7 +661,10 @@ function OrderCreatePageContent() {
                 type="tel"
                 className="block w-full rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-900 shadow-sm outline-none ring-0 placeholder:text-slate-400 focus:border-slate-900"
                 value={newClientPhone}
-                onChange={(event) => setNewClientPhone(event.target.value)}
+                onChange={(event) => {
+                  setNewClientPhone(event.target.value);
+                  setSelectedClient(null);
+                }}
               />
             </div>
           </div>
@@ -768,7 +676,10 @@ function OrderCreatePageContent() {
               type="email"
               className="block w-full rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-900 shadow-sm outline-none ring-0 placeholder:text-slate-400 focus:border-slate-900"
               value={newClientEmail}
-              onChange={(event) => setNewClientEmail(event.target.value)}
+              onChange={(event) => {
+                setNewClientEmail(event.target.value);
+                setSelectedClient(null);
+              }}
             />
           </div>
 
@@ -776,11 +687,11 @@ function OrderCreatePageContent() {
             <label className="block text-xs font-medium uppercase tracking-wide text-slate-600">
               Адрес *
             </label>
-            <textarea
-              className="block w-full rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-900 shadow-sm outline-none ring-0 placeholder:text-slate-400 focus:border-slate-900"
-              rows={3}
+            <AddressSuggestInput
               value={address}
-              onChange={(event) => setAddress(event.target.value)}
+              onChange={setAddress}
+              rows={3}
+              placeholder="Начните вводить адрес — подсказки появятся после 3 символов"
             />
           </div>
         </Card>
@@ -803,50 +714,8 @@ function OrderCreatePageContent() {
         </Card>
 
         <Card className="space-y-4 p-4">
-          <h2 className="text-sm font-semibold text-slate-900">3. Операторы</h2>
-
-          {operatorsLoadError ? (
-            <div className="rounded-md border border-yellow-200 bg-yellow-50 px-3 py-2 text-[11px] text-yellow-800">
-              Не удалось загрузить список операторов. Попробуйте обновить
-              страницу или повторить позже.
-            </div>
-          ) : null}
-
-          {operators.length > 0 ? (
-            <div className="grid gap-2 md:grid-cols-2">
-              {operators.map((operator) => {
-                const checked = operatorIds.includes(operator.id);
-                const name = formatUserDisplayName(operator);
-
-                return (
-                  <label
-                    key={operator.id}
-                    className="flex cursor-pointer items-center justify-between gap-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs hover:bg-slate-100"
-                  >
-                    <div>
-                      <div className="font-medium text-slate-900">{name}</div>
-                      {operator.phone ? (
-                        <div className="text-[11px] text-slate-500">
-                          {operator.phone}
-                        </div>
-                      ) : null}
-                    </div>
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => toggleOperator(operator.id)}
-                      className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900"
-                    />
-                  </label>
-                );
-              })}
-            </div>
-          ) : null}
-        </Card>
-
-        <Card className="space-y-4 p-4">
           <h2 className="text-sm font-semibold text-slate-900">
-            4. Номенклатура (опционально)
+            3. Номенклатура (опционально)
           </h2>
 
           {items.length > 0 ? (
@@ -913,6 +782,48 @@ function OrderCreatePageContent() {
               <span>Добавить</span>
             </button>
           </div>
+        </Card>
+
+        <Card className="space-y-4 p-4">
+          <h2 className="text-sm font-semibold text-slate-900">4. Операторы</h2>
+
+          {operatorsLoadError ? (
+            <div className="rounded-md border border-yellow-200 bg-yellow-50 px-3 py-2 text-[11px] text-yellow-800">
+              Не удалось загрузить список операторов. Попробуйте обновить
+              страницу или повторить позже.
+            </div>
+          ) : null}
+
+          {operators.length > 0 ? (
+            <div className="grid gap-2 md:grid-cols-2">
+              {operators.map((operator) => {
+                const checked = operatorIds.includes(operator.id);
+                const name = formatUserDisplayName(operator);
+
+                return (
+                  <label
+                    key={operator.id}
+                    className="flex cursor-pointer items-center justify-between gap-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs hover:bg-slate-100"
+                  >
+                    <div>
+                      <div className="font-medium text-slate-900">{name}</div>
+                      {operator.phone ? (
+                        <div className="text-[11px] text-slate-500">
+                          {operator.phone}
+                        </div>
+                      ) : null}
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleOperator(operator.id)}
+                      className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900"
+                    />
+                  </label>
+                );
+              })}
+            </div>
+          ) : null}
         </Card>
 
         <Card className="space-y-4 p-4">

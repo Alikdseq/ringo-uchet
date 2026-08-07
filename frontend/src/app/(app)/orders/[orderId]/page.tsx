@@ -509,43 +509,6 @@ export default function OrderDetailPage() {
             </Section>
           </div>
 
-          {/* Операторы и менеджер */}
-          <Section title="Участники">
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-1 text-xs">
-                <div className="font-semibold text-slate-800">Менеджер</div>
-                {order.manager ? (
-                  <>
-                    <div className="text-slate-700">
-                      {formatUserDisplayName(order.manager)}
-                    </div>
-                    {order.manager.phone ? (
-                      <div className="text-slate-500">{order.manager.phone}</div>
-                    ) : null}
-                  </>
-                ) : (
-                  <div className="text-slate-500">Не назначен</div>
-                )}
-              </div>
-              <div className="space-y-1 text-xs">
-                <div className="font-semibold text-slate-800">Операторы</div>
-                {order.operators && order.operators.length > 0 ? (
-                  <ul className="list-inside list-disc space-y-0.5 text-slate-700">
-                    {order.operators.map((op) => (
-                      <li key={op.id}>{formatUserDisplayName(op)}</li>
-                    ))}
-                  </ul>
-                ) : order.operator ? (
-                  <div className="text-slate-700">
-                    {formatUserDisplayName(order.operator)}
-                  </div>
-                ) : (
-                  <div className="text-slate-500">Операторы не назначены</div>
-                )}
-              </div>
-            </div>
-          </Section>
-
           {/* Позиции заказа */}
           <Section title={isOperator ? "Техника и работы" : "Позиции заказа"}>
             {order.items && order.items.length > 0 ? (
@@ -640,6 +603,43 @@ export default function OrderDetailPage() {
                 Позиции в заявке отсутствуют.
               </div>
             )}
+          </Section>
+
+          {/* Операторы и менеджер */}
+          <Section title="Участники">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-1 text-xs">
+                <div className="font-semibold text-slate-800">Менеджер</div>
+                {order.manager ? (
+                  <>
+                    <div className="text-slate-700">
+                      {formatUserDisplayName(order.manager)}
+                    </div>
+                    {order.manager.phone ? (
+                      <div className="text-slate-500">{order.manager.phone}</div>
+                    ) : null}
+                  </>
+                ) : (
+                  <div className="text-slate-500">Не назначен</div>
+                )}
+              </div>
+              <div className="space-y-1 text-xs">
+                <div className="font-semibold text-slate-800">Операторы</div>
+                {order.operators && order.operators.length > 0 ? (
+                  <ul className="list-inside list-disc space-y-0.5 text-slate-700">
+                    {order.operators.map((op) => (
+                      <li key={op.id}>{formatUserDisplayName(op)}</li>
+                    ))}
+                  </ul>
+                ) : order.operator ? (
+                  <div className="text-slate-700">
+                    {formatUserDisplayName(order.operator)}
+                  </div>
+                ) : (
+                  <div className="text-slate-500">Операторы не назначены</div>
+                )}
+              </div>
+            </div>
           </Section>
 
           {/* Финансы — только для админа/менеджера */}

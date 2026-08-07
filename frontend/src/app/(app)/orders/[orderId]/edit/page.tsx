@@ -22,6 +22,7 @@ import { AppError } from "@/shared/api/httpClient";
 import type { OrderRequestPayload } from "@/shared/api/ordersApi";
 import { RoleGuard } from "@/shared/components/auth/RoleGuard";
 import { formatUserDisplayName } from "@/shared/utils/userDisplay";
+import { AddressSuggestInput } from "@/shared/components/ui/AddressSuggestInput";
 
 function formatUtcWithoutMillis(date: Date): string {
   const iso = date.toISOString();
@@ -784,11 +785,11 @@ function OrderEditPageContent() {
                 <label className="block text-xs font-medium uppercase tracking-wide text-slate-600">
                   Адрес выполнения работ
                 </label>
-                <textarea
-                  className="block w-full rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-900 shadow-sm outline-none ring-0 placeholder:text-slate-400 focus:border-slate-900"
-                  rows={3}
+                <AddressSuggestInput
                   value={address}
-                  onChange={(event) => setAddress(event.target.value)}
+                  onChange={setAddress}
+                  rows={3}
+                  placeholder="Начните вводить адрес — подсказки появятся после 3 символов"
                 />
               </div>
 
@@ -876,52 +877,6 @@ function OrderEditPageContent() {
           ) : null}
         </Card>
 
-        <Card className="p-4 space-y-3">
-          <h2 className="text-sm font-semibold text-slate-900">Операторы</h2>
-
-          {operatorsLoadError ? (
-            <div className="rounded-md border border-yellow-200 bg-yellow-50 px-3 py-2 text-[11px] text-yellow-800">
-              Не удалось загрузить список операторов. Попробуйте обновить
-              страницу или повторить позже.
-            </div>
-          ) : null}
-
-          {operators.length > 0 ? (
-            <div className="grid gap-2 md:grid-cols-2">
-              {operators.map((operator) => {
-                const checked = operatorIds.includes(operator.id);
-                const name = formatUserDisplayName(operator);
-
-                return (
-                  <label
-                    key={operator.id}
-                    className="flex cursor-pointer items-center justify-between gap-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs hover:bg-slate-100"
-                  >
-                    <div>
-                      <div className="font-medium text-slate-900">{name}</div>
-                      {operator.phone ? (
-                        <div className="text-[11px] text-slate-500">
-                          {operator.phone}
-                        </div>
-                      ) : null}
-                    </div>
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => toggleOperator(operator.id)}
-                      className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900"
-                    />
-                  </label>
-                );
-              })}
-            </div>
-          ) : (
-            <p className="text-[11px] text-slate-500">
-              Операторы не загружены или отсутствуют.
-            </p>
-          )}
-        </Card>
-
         <Card className="space-y-4 p-4">
           <h2 className="text-sm font-semibold text-slate-900">
             Номенклатура заказа
@@ -990,6 +945,52 @@ function OrderEditPageContent() {
               <span>Добавить позицию</span>
             </button>
           </div>
+        </Card>
+
+        <Card className="p-4 space-y-3">
+          <h2 className="text-sm font-semibold text-slate-900">Операторы</h2>
+
+          {operatorsLoadError ? (
+            <div className="rounded-md border border-yellow-200 bg-yellow-50 px-3 py-2 text-[11px] text-yellow-800">
+              Не удалось загрузить список операторов. Попробуйте обновить
+              страницу или повторить позже.
+            </div>
+          ) : null}
+
+          {operators.length > 0 ? (
+            <div className="grid gap-2 md:grid-cols-2">
+              {operators.map((operator) => {
+                const checked = operatorIds.includes(operator.id);
+                const name = formatUserDisplayName(operator);
+
+                return (
+                  <label
+                    key={operator.id}
+                    className="flex cursor-pointer items-center justify-between gap-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs hover:bg-slate-100"
+                  >
+                    <div>
+                      <div className="font-medium text-slate-900">{name}</div>
+                      {operator.phone ? (
+                        <div className="text-[11px] text-slate-500">
+                          {operator.phone}
+                        </div>
+                      ) : null}
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleOperator(operator.id)}
+                      className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900"
+                    />
+                  </label>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-[11px] text-slate-500">
+              Операторы не загружены или отсутствуют.
+            </p>
+          )}
         </Card>
 
         {order && order.status === "COMPLETED" && operatorSalaries.length > 0 ? (

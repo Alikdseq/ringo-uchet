@@ -4,12 +4,22 @@ import Link from "next/link";
 import React, { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/shared/components/ui/Card";
+import { StatusBadge } from "@/shared/components/ui/StatusBadge";
 import { OrdersApi } from "@/shared/api/ordersApi";
-import { ProfileApi } from "@/shared/api/profileApi";
 import { useAuthStore } from "@/shared/store/authStore";
 import type { Order } from "@/shared/types/orders";
-import type { OperatorSalaryResponse } from "@/shared/types/salary";
 
+function formatDateTime(value?: Date | null): string {
+  if (!value) return "—";
+  return value.toLocaleString("ru-RU", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+/*
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat("ru-RU", {
     style: "currency",
@@ -39,6 +49,9 @@ function KpiCard({
     </Card>
   );
 }
+*/
+
+const ACTIVE_STATUSES = new Set(["CREATED", "APPROVED", "IN_PROGRESS", "DRAFT"]);
 
 export default function DashboardPage() {
   const user = useAuthStore((state) => state.user);
@@ -57,6 +70,7 @@ export default function DashboardPage() {
     refetchOnWindowFocus: false,
   });
 
+  /*
   const {
     data: salaryData,
     isLoading: isSalaryLoading,
@@ -73,182 +87,132 @@ export default function DashboardPage() {
     completedCount,
     revenue,
     dailyCounts,
-  }: {
-    newCount: number;
-    completedCount: number;
-    revenue: number;
-    dailyCounts: { date: string; label: string; total: number }[];
-  } = useMemo(() => {
+  } = useMemo(() => { ... }, [orders]);
+  */
+
+  const recentActiveOrders = useMemo(() => {
     const list = orders ?? [];
-    let created = 0;
-    let completed = 0;
-    let totalRevenue = 0;
-
-    const byDate = new Map<string, number>();
-
-    for (const order of list) {
-      if (order.status === "CREATED" || order.status === "APPROVED") {
-        created += 1;
-      }
-      if (order.status === "COMPLETED") {
-        completed += 1;
-        totalRevenue += order.totalAmount ?? 0;
-      }
-
-      const createdAt = order.createdAt;
-      if (createdAt) {
-        const iso = createdAt.toISOString().slice(0, 10);
-        byDate.set(iso, (byDate.get(iso) ?? 0) + 1);
-      }
-    }
-
-    const sortedDates = Array.from(byDate.keys()).sort();
-    const lastDates = sortedDates.slice(-7);
-    const dailyCounts = lastDates.map((iso) => {
-      const [, month, day] = iso.split("-");
-      return {
-        date: iso,
-        label: `${day}.${month}`,
-        total: byDate.get(iso) ?? 0,
-      };
-    });
-
-    return {
-      newCount: created,
-      completedCount: completed,
-      revenue: totalRevenue,
-      dailyCounts,
-    };
+    return list
+      .filter((order) => ACTIVE_STATUSES.has(order.status))
+      .sort((a, b) => {
+        const aTime = a.createdAt?.getTime() ?? 0;
+        const bTime = b.createdAt?.getTime() ?? 0;
+        return bTime - aTime;
+      })
+      .slice(0, 3);
   }, [orders]);
-
-  const operatorSalaryTotal =
-    salaryData?.totalSalary ??
-    salaryData?.orders?.reduce((sum, o) => sum + (o.salaryAmount || 0), 0) ??
-    0;
-
-  const kpiNew = isLoading ? "…" : String(newCount);
-  const kpiCompleted = isLoading ? "…" : String(completedCount);
-  const kpiMoney = isOperator
-    ? isSalaryLoading
-      ? "…"
-      : formatCurrency(operatorSalaryTotal)
-    : isLoading
-      ? "…"
-      : formatCurrency(revenue);
-
-  const maxDaily = dailyCounts.reduce(
-    (max, item) => (item.total > max ? item.total : max),
-    0,
-  );
-  const safeMax = maxDaily || 1;
 
   return (
     <section className="space-y-4">
+      {/*
       <div className="grid gap-3 md:grid-cols-3">
-        <KpiCard
-          label={isOperator ? "Мои активные" : "Новые заявки"}
-          value={kpiNew}
-          icon={<span className="text-lg">＋</span>}
-        />
-        <KpiCard
-          label="Завершённые"
-          value={kpiCompleted}
-          icon={<span className="text-lg">✅</span>}
-        />
-        <KpiCard
-          label={isOperator ? "Моя зарплата" : "Доход (по завершённым)"}
-          value={kpiMoney}
-          icon={<span className="text-lg">💰</span>}
-        />
+        <KpiCard label={...} value={kpiNew} icon={...} />
+        <KpiCard label="Завершённые" value={kpiCompleted} icon={...} />
+        <KpiCard label={...} value={kpiMoney} icon={...} />
       </div>
 
       <Card className="p-4 text-xs">
-        <h2 className="mb-3 text-sm font-semibold text-slate-900">
-          Заявки по дням (последние 7 дней)
-        </h2>
-        {dailyCounts.length === 0 ? (
-          <div className="text-[11px] text-slate-500">
-            Пока нет заявок для отображения.
-          </div>
-        ) : (
-          <div className="flex items-end gap-3 pt-1">
-            {dailyCounts.map((item) => (
-              <div
-                key={item.date}
-                className="flex flex-1 flex-col items-center justify-end gap-1"
-              >
-                <div className="flex h-24 w-full items-end justify-center rounded-md bg-slate-50">
-                  <div
-                    className="w-4 rounded-t-md bg-sky-500"
-                    style={{
-                      height: `${(item.total / safeMax) * 100}%`,
-                    }}
-                  />
-                </div>
-                <div className="text-[11px] font-semibold text-slate-900">
-                  {item.total}
-                </div>
-                <div className="text-[11px] text-slate-500">{item.label}</div>
-              </div>
-            ))}
-          </div>
-        )}
+        <h2>Заявки по дням (последние 7 дней)</h2>
+        ... chart ...
       </Card>
+      */}
 
       {isError ? (
         <Card className="border border-red-200 bg-red-50 p-3 text-xs text-red-700">
-          Не удалось загрузить данные по заявкам для дашборда. Попробуйте обновить
-          страницу позже.
+          Не удалось загрузить данные по заявкам. Попробуйте обновить страницу
+          позже.
         </Card>
       ) : null}
 
+      <Card className="p-4">
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <h2 className="text-base font-semibold text-slate-900">
+            Последние заявки
+          </h2>
+          <Link
+            href="/orders"
+            className="text-xs font-medium text-sky-600 hover:text-sky-700"
+          >
+            Все заявки
+          </Link>
+        </div>
+
+        {isLoading && recentActiveOrders.length === 0 ? (
+          <div className="text-xs text-slate-500">Загружаем заявки...</div>
+        ) : null}
+
+        {!isLoading && recentActiveOrders.length === 0 ? (
+          <div className="rounded-md border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-xs text-slate-500">
+            Нет активных заявок (до завершения).
+          </div>
+        ) : null}
+
+        <div className="space-y-2">
+          {recentActiveOrders.map((order) => {
+            const href = isOperator
+              ? `/orders/${order.id}`
+              : `/orders/${order.id}/edit`;
+            return (
+              <Link
+                key={order.id}
+                href={href}
+                className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 transition-colors hover:border-sky-200 hover:bg-sky-50"
+              >
+                <div className="min-w-0 space-y-0.5">
+                  <div className="truncate text-sm font-semibold text-slate-900">
+                    Заявка {order.number}
+                  </div>
+                  <div className="truncate text-xs text-slate-500">
+                    {order.client?.name || "Без клиента"}
+                    {order.address ? ` · ${order.address}` : ""}
+                  </div>
+                  <div className="text-[11px] text-slate-400">
+                    Создана {formatDateTime(order.createdAt)}
+                  </div>
+                </div>
+                <StatusBadge status={order.status} />
+              </Link>
+            );
+          })}
+        </div>
+      </Card>
+
+      {canManageOrders ? (
+        <Link
+          href="/orders/create"
+          className="flex min-h-[7.5rem] w-full items-center justify-center rounded-2xl bg-gradient-to-br from-sky-500 to-sky-600 px-6 py-8 text-center shadow-md shadow-sky-500/25 transition hover:from-sky-600 hover:to-sky-700 hover:shadow-lg hover:shadow-sky-600/30 active:scale-[0.99]"
+        >
+          <span className="flex flex-col items-center gap-2">
+            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white/20 text-3xl font-light text-white">
+              +
+            </span>
+            <span className="text-lg font-semibold tracking-wide text-white">
+              Создать заявку
+            </span>
+            <span className="text-xs font-medium text-sky-100">
+              Новая заявка на спецтехнику
+            </span>
+          </span>
+        </Link>
+      ) : null}
+
+      {/*
       {canManageOrders ? (
         <Card className="p-4 text-sm">
-          <h2 className="mb-3 text-base font-semibold text-slate-900">
-            Быстрые действия
-          </h2>
-          <div className="space-y-2 text-sm">
-            <Link
-              href="/orders/create"
-              className="flex items-center gap-2 text-sky-600 hover:text-sky-700"
-            >
-              <span className="text-lg">＋</span>
-              <span>Создать заявку</span>
-            </Link>
-            <Link
-              href="/reports/summary"
-              className="flex items-center gap-2 text-slate-700 hover:text-slate-900"
-            >
-              <span className="text-lg">ⓘ</span>
-              <span>Отчёты</span>
-            </Link>
-          </div>
+          <h2>Быстрые действия</h2>
+          <Link href="/orders/create">Создать заявку</Link>
+          <Link href="/reports/summary">Отчёты</Link>
         </Card>
       ) : null}
 
       {isOperator ? (
         <Card className="p-4 text-sm">
-          <h2 className="mb-3 text-base font-semibold text-slate-900">
-            Быстрые действия
-          </h2>
-          <div className="space-y-2 text-sm">
-            <Link
-              href="/orders"
-              className="flex items-center gap-2 text-sky-600 hover:text-sky-700"
-            >
-              <span className="text-lg">📋</span>
-              <span>Мои заявки</span>
-            </Link>
-            <Link
-              href="/reports"
-              className="flex items-center gap-2 text-slate-700 hover:text-slate-900"
-            >
-              <span className="text-lg">💰</span>
-              <span>Мои зарплаты</span>
-            </Link>
-          </div>
+          <h2>Быстрые действия</h2>
+          <Link href="/orders">Мои заявки</Link>
+          <Link href="/reports">Мои зарплаты</Link>
         </Card>
       ) : null}
+      */}
     </section>
   );
 }

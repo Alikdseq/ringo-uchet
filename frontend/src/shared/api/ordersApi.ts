@@ -15,6 +15,8 @@ export interface OrdersListParams {
   search?: string;
   page?: number;
   pageSize?: number;
+  dateFrom?: string;
+  dateTo?: string;
 }
 
 interface OrdersListQueryParams {
@@ -22,6 +24,8 @@ interface OrdersListQueryParams {
   search?: string;
   page?: number;
   page_size?: number;
+  date_from?: string;
+  date_to?: string;
 }
 
 export interface OrderRequestPayload {
@@ -51,7 +55,9 @@ function buildListCacheKey(params: OrdersListParams): string {
   const search = params.search ?? "";
   const page = params.page ?? 1;
   const pageSize = params.pageSize ?? 50;
-  return `${LIST_CACHE_PREFIX}${status}:${page}:${pageSize}:${search}`;
+  const dateFrom = params.dateFrom ?? "";
+  const dateTo = params.dateTo ?? "";
+  return `${LIST_CACHE_PREFIX}${status}:${page}:${pageSize}:${search}:${dateFrom}:${dateTo}`;
 }
 
 function readOrdersListCache(key: string): Order[] | null {
@@ -120,6 +126,8 @@ export const OrdersApi = {
     if (params.search) query.search = params.search;
     if (params.page) query.page = params.page;
     if (params.pageSize) query.page_size = params.pageSize;
+    if (params.dateFrom) query.date_from = params.dateFrom;
+    if (params.dateTo) query.date_to = params.dateTo;
 
     const cacheKey = buildListCacheKey(params);
 
@@ -138,6 +146,18 @@ export const OrdersApi = {
       }
       throw error;
     }
+  },
+
+  async suggestAddresses(query: string): Promise<string[]> {
+    const q = query.trim();
+    if (q.length < 3) return [];
+    const response = await httpClient.get<string[]>("/orders/address-suggestions/", {
+      params: { q },
+    });
+    const data = response.data;
+    return Array.isArray(data)
+      ? data.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+      : [];
   },
 
   async get(id: string | number): Promise<Order> {

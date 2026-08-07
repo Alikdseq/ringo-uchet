@@ -35,6 +35,8 @@ interface OrdersListFilters {
   status: TabKey;
   search: string;
   page: number;
+  dateFrom: string;
+  dateTo: string;
 }
 
 function useOrdersData(filters: OrdersListFilters) {
@@ -47,6 +49,8 @@ function useOrdersData(filters: OrdersListFilters) {
       search: debouncedSearch,
       page: filters.page,
       pageSize: PAGE_SIZE,
+      dateFrom: filters.dateFrom,
+      dateTo: filters.dateTo,
     },
   ] as const;
 
@@ -58,14 +62,12 @@ function useOrdersData(filters: OrdersListFilters) {
         search: debouncedSearch || undefined,
         page: filters.page,
         pageSize: PAGE_SIZE,
+        dateFrom: filters.dateFrom || undefined,
+        dateTo: filters.dateTo || undefined,
       }),
-    // Автоматическое обновление каждые 5 секунд для real-time синхронизации
     refetchInterval: 5000,
-    // Данные считаются свежими 3 секунды
     staleTime: 3000,
-    // Используем предыдущие данные во время обновления (без мерцаний)
     placeholderData: (previousData: Order[] | undefined) => previousData,
-    // Не показываем loading при background refetch
     notifyOnChangeProps: ["data", "error"],
   });
 
@@ -102,6 +104,8 @@ export default function OrdersPage() {
   const [status, setStatus] = useState<TabKey>("ALL");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [draftSummary, setDraftSummary] = useState<OrderDraftSummary | null>(
     null,
   );
@@ -115,6 +119,8 @@ export default function OrdersPage() {
     status,
     search,
     page,
+    dateFrom,
+    dateTo,
   });
 
   // Загружаем локальный черновик заявки (если есть)
@@ -180,6 +186,22 @@ export default function OrdersPage() {
     setPage(1);
   };
 
+  const handleDateFromChange = (value: string) => {
+    setDateFrom(value);
+    setPage(1);
+  };
+
+  const handleDateToChange = (value: string) => {
+    setDateTo(value);
+    setPage(1);
+  };
+
+  const handleClearDates = () => {
+    setDateFrom("");
+    setDateTo("");
+    setPage(1);
+  };
+
   let errorMessage: string | null = null;
   if (isError) {
     if (error instanceof Error) {
@@ -222,6 +244,34 @@ export default function OrdersPage() {
             >
               ⟳
             </button>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <span className="text-slate-500">Период</span>
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(event) => handleDateFromChange(event.target.value)}
+              className="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-800 outline-none focus:border-sky-400"
+            />
+            <span className="text-slate-400">—</span>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(event) => handleDateToChange(event.target.value)}
+              className="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-800 outline-none focus:border-sky-400"
+            />
+            {dateFrom || dateTo ? (
+              <button
+                type="button"
+                onClick={handleClearDates}
+                className="rounded-md px-2 py-1 text-[11px] font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+              >
+                Сбросить
+              </button>
+            ) : null}
           </div>
         </div>
 

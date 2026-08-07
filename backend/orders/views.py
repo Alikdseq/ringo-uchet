@@ -167,7 +167,51 @@ class OrderViewSet(viewsets.ModelViewSet):
         status_param = self.request.query_params.get("status")
         if status_param:
             qs = qs.filter(status=status_param)
+
+        # Фильтр по периоду даты начала работ
+        date_from = self.request.query_params.get("date_from")
+        date_to = self.request.query_params.get("date_to")
+        if date_from:
+            qs = qs.filter(start_dt__date__gte=date_from)
+        if date_to:
+            qs = qs.filter(start_dt__date__lte=date_to)
+
+        search = (self.request.query_params.get("search") or "").strip()
+        if search:
+            from django.db.models import Q
+
+            qs = qs.filter(
+                Q(number__icontains=search)
+                | Q(address__icontains=search)
+                | Q(client__name__icontains=search)
+                | Q(client__phone__icontains=search)
+            ).distinct()
+
         return qs
+
+    @extend_schema(
+        summary="Подсказки адресов",
+        description="Уникальные адреса из заявок по подстроке (от 3 символов).",
+        tags=["Orders"],
+    )
+    @action(detail=False, methods=["get"], url_path="address-suggestions")
+    def address_suggestions(self, request, pk=None):
+        q = (request.query_params.get("q") or "").strip()
+        if len(q) < 3:
+            return Response([])
+
+        from django.db.models import Count, Max
+
+        qs = (
+            self.get_queryset()
+            .exclude(address__isnull=True)
+            .exclude(address__exact="")
+            .filter(address__icontains=q)
+            .values("address")
+            .annotate(usage_count=Count("id"), last_used=Max("created_at"))
+            .order_by("-usage_count", "-last_used")[:15]
+        )
+        return Response([row["address"] for row in qs])
 
     def perform_create(self, serializer: OrderSerializer) -> None:
         try:
